@@ -68,12 +68,13 @@ func registerServerRoutes(router *gin.Engine, service *servers.Service, tokens *
 		}
 		var request struct {
 			Name string `json:"name"`
+			Type string `json:"type"`
 		}
 		if context.ShouldBindJSON(&request) != nil {
 			errorResponse(context, http.StatusBadRequest, "validation_error", "Request body must be valid JSON.")
 			return
 		}
-		item, err := service.CreateChannel(context.Request.Context(), requiredUserID(context), serverID, request.Name)
+		item, err := service.CreateChannel(context.Request.Context(), requiredUserID(context), serverID, request.Name, request.Type)
 		if err != nil {
 			serverError(context, err)
 			return
@@ -117,6 +118,8 @@ func serverError(context *gin.Context, err error) {
 		errorResponse(context, http.StatusConflict, "last_server_owner", "The last server owner cannot leave the server.")
 	case errors.Is(err, servers.ErrValidation):
 		errorResponse(context, http.StatusBadRequest, "validation_error", err.Error())
+	case errors.Is(err, servers.ErrConflict):
+		errorResponse(context, http.StatusConflict, "channel_conflict", err.Error())
 	default:
 		errorResponse(context, http.StatusInternalServerError, "server_operation_failed", "Unable to complete the server operation.")
 	}

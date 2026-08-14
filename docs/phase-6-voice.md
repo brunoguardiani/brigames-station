@@ -1,0 +1,39 @@
+# Phase 6 — Voice Channels
+
+## Objective
+
+Enable authenticated server members to join a voice channel from the desktop
+application using a self-hosted LiveKit instance.
+
+## Architecture
+
+- PostgreSQL continues to store only servers, memberships, and channel type.
+  It does not store LiveKit tokens or media-session state.
+- The Go API authorizes the caller against `server_memberships`, verifies that
+  the selected channel has type `voice`, and signs a short-lived LiveKit token.
+- The Electron main process obtains the token through authenticated IPC; the
+  Angular renderer receives only the LiveKit URL and short-lived token needed
+  to connect.
+- Audio flows directly between the desktop client and LiveKit over WebRTC. The
+  Go API does not proxy media.
+
+## Local Development
+
+`docker compose up -d` starts PostgreSQL and LiveKit. The Compose LiveKit
+service uses `--dev` and the `devkey`/`secret` credentials in `.env.example`.
+They are strictly local-development values and must be replaced by managed
+secrets and a production LiveKit configuration when deploying remotely.
+
+Create a voice channel from the desktop owner menu, or run `Create Voice
+Channel` followed by `Create Voice Token` in the Postman collection. With the
+API and desktop app running, select the voice channel; the app requests the
+microphone and joins automatically. Use the `Sair de <canal>` button to leave.
+
+## Scope and Limits
+
+- Delivered: voice-channel type, membership-gated LiveKit token issuance,
+  local LiveKit Compose service, desktop microphone publishing, and remote
+  audio playback.
+- Deliberately deferred: video, screen sharing, device selection, mute UI,
+  participant/presence display, recording, TURN configuration, and
+  multi-instance operational infrastructure.

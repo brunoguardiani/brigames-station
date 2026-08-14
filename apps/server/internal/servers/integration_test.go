@@ -74,15 +74,18 @@ func TestServerAndChannelLifecycle(t *testing.T) {
 	if _, err := pool.Exec(ctx, "INSERT INTO server_memberships (server_id, user_id, role) VALUES ($1, $2, 'member')", server.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CreateChannel(ctx, member.ID, server.ID, "forbidden"); !errors.Is(err, servers.ErrForbidden) {
+	if _, err := service.CreateChannel(ctx, member.ID, server.ID, "forbidden", "text"); !errors.Is(err, servers.ErrForbidden) {
 		t.Fatalf("member create channel error = %v, want ErrForbidden", err)
 	}
-	channel, err := service.CreateChannel(ctx, owner.ID, server.ID, "planning")
+	channel, err := service.CreateChannel(ctx, owner.ID, server.ID, "planning", "text")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if channel.Position != 1 || channel.Type != "text" {
 		t.Fatalf("channel = %#v, want text channel at position 1", channel)
+	}
+	if _, err := service.CreateChannel(ctx, owner.ID, server.ID, "planning", "text"); !errors.Is(err, servers.ErrConflict) {
+		t.Fatalf("duplicate channel error = %v, want ErrConflict", err)
 	}
 	if err := service.Leave(ctx, member.ID, server.ID); err != nil {
 		t.Fatal(err)
@@ -95,7 +98,7 @@ func TestServerAndChannelLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := httpserver.NewHandler(pool, identities, tokens, service, nil, nil, nil)
+	router := httpserver.NewHandler(pool, identities, tokens, service, nil, nil, nil, nil)
 	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/servers/%d/channels", server.ID), nil)
 	request.Header.Set("Authorization", "Bearer "+accessToken)
 	recorder := httptest.NewRecorder()

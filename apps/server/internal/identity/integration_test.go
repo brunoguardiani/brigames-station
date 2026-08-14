@@ -87,7 +87,7 @@ func TestIdentityLifecycle(t *testing.T) {
 		t.Fatalf("revoked refresh token error = %v, want ErrInvalidRefreshToken", err)
 	}
 
-	router := httpserver.NewHandler(pool, service, tokenManager, nil, nil, nil, nil)
+	router := httpserver.NewHandler(pool, service, tokenManager, nil, nil, nil, nil, nil)
 	request := httptest.NewRequest(http.MethodGet, "/me", nil)
 	request.Header.Set("Authorization", "Bearer "+login.AccessToken)
 	recorder := httptest.NewRecorder()

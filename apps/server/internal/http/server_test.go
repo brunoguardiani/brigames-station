@@ -12,7 +12,7 @@ func TestNewHandlerServesLivenessEndpoint(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	recorder := httptest.NewRecorder()
 
-	NewHandler(nil, nil, nil, nil, nil, nil, nil).ServeHTTP(recorder, request)
+	NewHandler(nil, nil, nil, nil, nil, nil, nil, nil).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", recorder.Code, http.StatusOK)

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, HostListener, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Room, RoomEvent, Track } from 'livekit-client';
 
 type BackendState = 'checking' | 'available' | 'unavailable';
 type User = { username: string; email: string; role: string };
@@ -18,10 +19,15 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly error = signal('');
   protected readonly loading = signal(false);
   protected readonly leaveConfirmationOpen = signal(false);
-  protected identity = ''; protected password = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = ''; protected messageContent = ''; protected inviteCode = ''; protected createdInvite = '';
+  protected readonly voiceChannel = signal<Channel | null>(null);
+  protected readonly voiceParticipants = signal<VoiceParticipant[]>([]);
+  protected readonly activeSpeakerIDs = signal<string[]>([]);
+  protected identity = ''; protected password = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = ''; protected channelType: 'text' | 'voice' = 'text'; protected messageContent = ''; protected inviteCode = ''; protected createdInvite = '';
   private healthCheckTimer?: ReturnType<typeof setInterval>;
   private removeRealtimeConnectedListener?: () => void;
   private removeRealtimeMessageListener?: () => void;
+  private voiceRoom?: Room;
+  private voiceAudioElements: HTMLAudioElement[] = [];
 
   ngOnInit(): void {
     void this.refreshBackendStatus();
@@ -40,6 +46,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
     this.removeRealtimeConnectedListener?.();
     this.removeRealtimeMessageListener?.();
+    void this.leaveVoiceChannel();
   }
   @HostListener('document:click', ['$event'])
   protected closePopoversWhenClickingOutside(event: MouseEvent): void {
@@ -57,7 +64,7 @@ export class AppComponent implements OnInit, OnDestroy {
     catch (error) { this.error.set(this.messageFor(error, 'Login failed. Check your credentials and backend connection.')); }
     finally { this.loading.set(false); }
   }
-  protected async logout(): Promise<void> { await window.desktop.auth.logout(); this.user.set(null); this.servers.set([]); this.channels.set([]); this.selectedServer.set(null); this.error.set(''); }
+  protected async logout(): Promise<void> { await this.leaveVoiceChannel(); await window.desktop.auth.logout(); this.user.set(null); this.servers.set([]); this.channels.set([]); this.selectedServer.set(null); this.error.set(''); }
   protected async createServer(): Promise<void> {
     this.loading.set(true); this.error.set('');
     try { const server = await window.desktop.servers.create(this.serverName, this.serverDescription); this.serverName = ''; this.serverDescription = ''; await this.loadServers(server.id); }
@@ -69,14 +76,24 @@ export class AppComponent implements OnInit, OnDestroy {
     try { this.channels.set(await window.desktop.channels.list(server.id)); }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to load channels.')); }
   }
-  protected async selectChannel(channel: Channel): Promise<void> { this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
+  protected async selectChannel(channel: Channel): Promise<void> { if (channel.type !== 'text') return; this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
+  protected async joinVoiceChannel(channel: Channel): Promise<void> {
+    if (this.voiceChannel()?.id === channel.id) return;
+    await this.leaveVoiceChannel(); this.loading.set(true); this.error.set('');
+    try { const session = await window.desktop.voice.join(channel.id); const room = new Room(); const refreshParticipants = () => this.voiceParticipants.set([{ identity: room.localParticipant.identity, name: room.localParticipant.name || room.localParticipant.identity }, ...Array.from(room.remoteParticipants.values()).map((participant) => ({ identity: participant.identity, name: participant.name || participant.identity }))]); room.on(RoomEvent.TrackSubscribed, (track) => { if (track.kind === Track.Kind.Audio) { const audio = track.attach(); document.body.appendChild(audio); this.voiceAudioElements.push(audio); } }); room.on(RoomEvent.ParticipantConnected, refreshParticipants); room.on(RoomEvent.ParticipantDisconnected, refreshParticipants); room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => this.activeSpeakerIDs.set(speakers.map((speaker) => speaker.identity))); room.on(RoomEvent.Disconnected, () => { this.voiceRoom = undefined; this.voiceChannel.set(null); this.voiceParticipants.set([]); this.activeSpeakerIDs.set([]); this.removeVoiceAudio(); }); await room.connect(session.url, session.token); await room.localParticipant.setMicrophoneEnabled(true); this.voiceRoom = room; this.voiceChannel.set(channel); refreshParticipants(); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to join voice channel.')); }
+    finally { this.loading.set(false); }
+  }
+  protected async leaveVoiceChannel(): Promise<void> { const room=this.voiceRoom; this.voiceRoom=undefined; this.voiceChannel.set(null); this.voiceParticipants.set([]); this.activeSpeakerIDs.set([]); this.removeVoiceAudio(); if (room) await room.disconnect(); }
+  protected isSpeaking(participant: VoiceParticipant): boolean { return this.activeSpeakerIDs().includes(participant.identity); }
+  private removeVoiceAudio(): void { for (const audio of this.voiceAudioElements) audio.remove(); this.voiceAudioElements = []; }
   protected async sendMessage(): Promise<void> { const channel = this.selectedChannel(); if (!channel) return; this.loading.set(true); try { await window.desktop.messages.create(channel.id, this.messageContent); this.messageContent = ''; await this.selectChannel(channel); } catch (error) { this.error.set(this.messageFor(error, 'Unable to send message.')); } finally { this.loading.set(false); } }
   protected async createInvite(): Promise<void> { const server=this.selectedServer(); if(!server)return; try { this.createdInvite=(await window.desktop.invites.createAndCopy(server.id)).code; } catch(error){this.error.set(this.messageFor(error,'Unable to create invite.'));} }
   protected async joinInvite(): Promise<void> { try { const joined=await window.desktop.invites.join(this.inviteCode); this.inviteCode=''; await this.loadServers(joined.server_id); } catch(error){this.error.set(this.messageFor(error,'Unable to join invite.'));} }
   protected async createChannel(): Promise<void> {
     const server = this.selectedServer(); if (!server) return;
     this.loading.set(true); this.error.set(''); const name = this.channelName;
-    try { await window.desktop.channels.create(server.id, name); this.channelName = ''; this.channels.set(await window.desktop.channels.list(server.id)); }
+    try { await window.desktop.channels.create(server.id, name, this.channelType); this.channelName = ''; this.channelType = 'text'; this.channels.set(await window.desktop.channels.list(server.id)); }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to create channel.')); }
     finally { this.loading.set(false); }
   }
@@ -104,3 +121,5 @@ export class AppComponent implements OnInit, OnDestroy {
   private async refreshBackendStatus(): Promise<void> { try { const health = await window.desktop.backend.getHealth(); this.status.set(health.status === 'alive' ? 'available' : 'unavailable'); } catch { this.status.set('unavailable'); } }
   private messageFor(error: unknown, fallback: string): string { return error instanceof Error ? error.message : fallback; }
 }
+
+type VoiceParticipant = { identity: string; name: string };

@@ -7,6 +7,7 @@ import (
 
 var (
 	ErrValidation = errors.New("invalid server input")
+	ErrConflict   = errors.New("server resource conflict")
 	ErrNotFound   = errors.New("server not found")
 	ErrForbidden  = errors.New("server action is forbidden")
 	ErrLastOwner  = errors.New("the last server owner cannot leave")

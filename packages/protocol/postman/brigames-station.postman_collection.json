@@ -14,6 +14,7 @@
     { "key": "serverId", "value": "" },
     { "key": "serverName", "value": "My test server" },
     { "key": "channelName", "value": "planning" },
+    { "key": "voiceChannelName", "value": "Sala de voz" },
     { "key": "channelId", "value": "" },
     { "key": "messageContent", "value": "Hello from Postman" },
     { "key": "inviteCode", "value": "" }
@@ -81,6 +82,11 @@
           "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{channelName}}\"\n}" }, "url": "{{baseUrl}}/servers/{{serverId}}/channels" }
         },
         {
+          "name": "Create Voice Channel",
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{voiceChannelName}}\",\n  \"type\": \"voice\"\n}" }, "url": "{{baseUrl}}/servers/{{serverId}}/channels" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 201', () => pm.response.to.have.status(201));", "pm.collectionVariables.set('channelId', pm.response.json().id);"] } }]
+        },
+        {
           "name": "Leave Server",
           "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/servers/{{serverId}}/leave" }
         }
@@ -98,6 +104,12 @@
       "item": [
         { "name": "Create Invite", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/servers/{{serverId}}/invites" }, "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('inviteCode', pm.response.json().code);"] } }] },
         { "name": "Join Invite", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/invites/{{inviteCode}}/join" } }
+      ]
+    },
+    {
+      "name": "Voice (Phase 6)",
+      "item": [
+        { "name": "Create Voice Token", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/voice/channels/{{channelId}}/token" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 200', () => pm.response.to.have.status(200));", "const body = pm.response.json();", "pm.expect(body.url).to.be.a('string');", "pm.expect(body.token).to.be.a('string');", "pm.expect(body.room).to.be.a('string');"] } }] }
       ]
     }
   ]

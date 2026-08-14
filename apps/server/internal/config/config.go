@@ -16,6 +16,7 @@ type Config struct {
 	HTTPAddr    string
 	DatabaseURL string
 	Auth        AuthConfig
+	LiveKit     LiveKitConfig
 }
 
 type AuthConfig struct {
@@ -25,6 +26,10 @@ type AuthConfig struct {
 	JWTAudience         string
 	AccessTokenTTL      time.Duration
 	RefreshTokenTTL     time.Duration
+}
+type LiveKitConfig struct {
+	URL, APIKey, APISecret string
+	TokenTTL               time.Duration
 }
 
 type OwnerSeedConfig struct {
@@ -48,12 +53,29 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	liveKit, err := loadLiveKitConfig()
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		HTTPAddr:    httpAddr,
 		DatabaseURL: databaseURL,
 		Auth:        auth,
+		LiveKit:     liveKit,
 	}, nil
+}
+func loadLiveKitConfig() (LiveKitConfig, error) {
+	c := LiveKitConfig{URL: os.Getenv("LIVEKIT_URL"), APIKey: os.Getenv("LIVEKIT_API_KEY"), APISecret: os.Getenv("LIVEKIT_API_SECRET")}
+	if c.URL == "" || c.APIKey == "" || c.APISecret == "" {
+		return LiveKitConfig{}, fmt.Errorf("LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET are required")
+	}
+	ttl, err := durationEnv("LIVEKIT_TOKEN_TTL", 15*time.Minute)
+	if err != nil {
+		return LiveKitConfig{}, err
+	}
+	c.TokenTTL = ttl
+	return c, nil
 }
 
 func LoadOwnerSeedConfig() (OwnerSeedConfig, error) {

@@ -136,3 +136,17 @@ authentication, server, and channel data only through the limited preload API.
 With PostgreSQL and the backend running, `/health` and `/ready` must both
 return `200`. The desktop must show `available`. Stop the backend process and,
 within five seconds, the desktop must change to `unavailable`.
+# brigames-station
+
+## Local infrastructure
+
+Start PostgreSQL and the local LiveKit development server:
+
+```powershell
+docker compose up -d
+```
+
+LiveKit is exposed locally at `ws://127.0.0.1:7880` with the development-only
+credentials documented in `.env.example`. These credentials must never be used
+outside local development. Docker Compose also exposes the local WebRTC UDP
+port `7882`.

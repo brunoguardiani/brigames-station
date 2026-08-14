@@ -10,6 +10,9 @@ func TestLoadReadsAuthenticationConfiguration(t *testing.T) {
 	t.Setenv("AUTH_JWT_AUDIENCE", "brigames-station-desktop")
 	t.Setenv("AUTH_ACCESS_TOKEN_TTL", "15m")
 	t.Setenv("AUTH_REFRESH_TOKEN_TTL", "720h")
+	t.Setenv("LIVEKIT_URL", "ws://127.0.0.1:7880")
+	t.Setenv("LIVEKIT_API_KEY", "devkey")
+	t.Setenv("LIVEKIT_API_SECRET", "secret")
 
 	config, err := Load()
 	if err != nil {

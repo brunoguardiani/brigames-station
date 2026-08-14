@@ -27,10 +27,16 @@ function splashMascotPath(): string {
   return desktopAssetPath('brigames-station-mascot.png');
 }
 
+function isTrustedRendererURL(url: string): boolean {
+  if (url.startsWith('file:')) return true;
+  const rendererURL = process.env['ELECTRON_RENDERER_URL'];
+  return rendererURL !== undefined && url.startsWith(rendererURL);
+}
+
 type User = { username: string; email: string; role: string };
 type Tokens = { access_token: string; refresh_token: string };
 type Server = { id: number; name: string; description: string; created_by: number; membership_role: 'owner' | 'member'; created_at: string };
-type Channel = { id: number; server_id: number; name: string; type: 'text'; position: number; created_by: number; created_at: string };
+type Channel = { id: number; server_id: number; name: string; type: 'text' | 'voice'; position: number; created_by: number; created_at: string };
 type Message = { id: number; channel_id: number; author_id: number; author_username: string; content: string; created_at: string };
 type MessagePage = { messages: Message[]; next_before: number | null };
 
@@ -162,6 +168,9 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(permission === 'media' && isTrustedRendererURL(webContents.getURL()));
+  });
   window.once('ready-to-show', () => onReady(window));
 
   const rendererURL = process.env['ELECTRON_RENDERER_URL'];
@@ -215,9 +224,9 @@ ipcMain.handle('channels:list', (_event, serverID: unknown): Promise<Channel[]> 
   if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.');
   return authenticatedRequest<Channel[]>('/servers/' + serverID + '/channels');
 });
-ipcMain.handle('channels:create', (_event, serverID: unknown, name: unknown): Promise<Channel> => {
-  if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0 || typeof name !== 'string') throw new Error('Invalid channel input.');
-  return authenticatedRequest<Channel>('/servers/' + serverID + '/channels', 'POST', { name });
+ipcMain.handle('channels:create', (_event, serverID: unknown, name: unknown, type: unknown): Promise<Channel> => {
+  if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0 || typeof name !== 'string' || (type !== 'text' && type !== 'voice')) throw new Error('Invalid channel input.');
+  return authenticatedRequest<Channel>('/servers/' + serverID + '/channels', 'POST', { name, type });
 });
 ipcMain.handle('servers:leave', (_event, serverID: unknown): Promise<void> => {
   if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.');
@@ -225,6 +234,7 @@ ipcMain.handle('servers:leave', (_event, serverID: unknown): Promise<void> => {
 });
 ipcMain.handle('messages:list', (_event, channelID: unknown): Promise<MessagePage> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0) throw new Error('Invalid channel ID.'); return authenticatedRequest<MessagePage>('/channels/' + channelID + '/messages'); });
 ipcMain.handle('messages:create', (_event, channelID: unknown, content: unknown): Promise<Message> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0 || typeof content !== 'string') throw new Error('Invalid message input.'); return authenticatedRequest<Message>('/channels/' + channelID + '/messages', 'POST', { content }); });
+ipcMain.handle('voice:join', (_event, channelID: unknown): Promise<{ url: string; token: string; room: string }> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0) throw new Error('Invalid voice channel ID.'); return authenticatedRequest('/voice/channels/' + channelID + '/token', 'POST'); });
 ipcMain.handle('invites:create', (_event, serverID: unknown): Promise<{ code: string; expires_at: string }> => { if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.'); return authenticatedRequest('/servers/' + serverID + '/invites', 'POST'); });
 ipcMain.handle('invites:create-and-copy', async (_event, serverID: unknown): Promise<{ code: string; expires_at: string }> => {
   if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.');

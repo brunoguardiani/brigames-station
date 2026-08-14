@@ -232,3 +232,22 @@ created text messages. Its scope is documented in
 - [x] Keep tokens and the WebSocket client in the Electron main process.
 - [x] Add typed, minimal IPC events to Angular and reconnect with bounded exponential backoff.
 - [x] Verify delivery of `message.created` between two authenticated clients.
+
+## Phase 6 — Voice Channels
+
+Phase 6 adds local, self-hosted LiveKit voice channels. Its design and
+operational limits are documented in [`phase-6-voice.md`](./phase-6-voice.md).
+
+### Delivered Scope
+
+- [x] Add the `voice` channel type with a reversible SQL migration.
+- [x] Add a membership-gated API that issues short-lived LiveKit room tokens.
+- [x] Add the voice-token HTTP contract and Postman manual check.
+- [x] Start a local LiveKit development service through Docker Compose.
+- [x] Add Electron IPC and a desktop voice-channel join/leave flow.
+
+### Deferred Scope
+
+- Video, screen sharing, recording, device selection, mute controls, and
+  participant presence.
+- Public deployment, TLS, TURN configuration, and production LiveKit secrets.

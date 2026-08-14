@@ -291,6 +291,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/ServerNotFound' }
+        '409': { $ref: '#/components/responses/ChannelConflict' }
   /invites/{code}/join:
     post:
       summary: Join a server with an active invite
@@ -327,6 +328,27 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/ChannelNotFound' }
+  /voice/channels/{channelId}/token:
+    parameters:
+      - $ref: '#/components/parameters/ChannelID'
+    post:
+      summary: Create a short-lived LiveKit token for a voice channel
+      description: >-
+        Authorizes a member of the specified voice channel and returns a
+        short-lived connection token. The client uses the returned URL and
+        token directly with LiveKit; media never passes through this API.
+      operationId: createVoiceChannelToken
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Voice session connection details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceJoin'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/VoiceChannelNotFound' }
 components:
   securitySchemes:
     bearerAuth:
@@ -378,6 +400,18 @@ components:
             $ref: '#/components/schemas/ErrorStatus'
     ChannelNotFound:
       description: The channel does not exist or is not visible to the authenticated user.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorStatus'
+    ChannelConflict:
+      description: A channel with the same name already exists in the server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorStatus'
+    VoiceChannelNotFound:
+      description: The voice channel does not exist or is not visible to the authenticated user.
       content:
         application/json:
           schema:
@@ -532,6 +566,10 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+        type:
+          type: string
+          enum: [text, voice]
+          default: text
     Channel:
       type: object
       required: [id, server_id, name, type, position, created_by, created_at]
@@ -546,7 +584,7 @@ components:
           type: string
         type:
           type: string
-          const: text
+          enum: [text, voice]
         position:
           type: integer
           minimum: 0
@@ -585,3 +623,17 @@ components:
       properties:
         messages: { type: array, items: { $ref: '#/components/schemas/Message' } }
         next_before: { type: [integer, 'null'], format: int64 }
+    VoiceJoin:
+      type: object
+      required: [url, token, room]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: LiveKit WebSocket URL.
+        token:
+          type: string
+          description: Short-lived LiveKit access token.
+        room:
+          type: string
+          description: Opaque room name derived from the server and voice channel.

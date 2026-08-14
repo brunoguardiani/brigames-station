@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -97,8 +98,12 @@ func (service *Service) ListChannels(ctx context.Context, userID, serverID int64
 	return items, nil
 }
 
-func (service *Service) CreateChannel(ctx context.Context, userID, serverID int64, name string) (Channel, error) {
+func (service *Service) CreateChannel(ctx context.Context, userID, serverID int64, name, channelType string) (Channel, error) {
 	name, err := validateChannelName(name)
+	if err != nil {
+		return Channel{}, err
+	}
+	channelType, err = validateChannelType(channelType)
 	if err != nil {
 		return Channel{}, err
 	}
@@ -126,7 +131,10 @@ func (service *Service) CreateChannel(ctx context.Context, userID, serverID int6
 		return Channel{}, fmt.Errorf("find next channel position: %w", err)
 	}
 	var channel Channel
-	err = tx.QueryRow(ctx, "INSERT INTO channels (server_id, name, type, position, created_by) VALUES ($1, $2, 'text', $3, $4) RETURNING id, server_id, name, type, position, created_by, created_at", serverID, name, position, userID).Scan(&channel.ID, &channel.ServerID, &channel.Name, &channel.Type, &channel.Position, &channel.CreatedBy, &channel.CreatedAt)
+	err = tx.QueryRow(ctx, "INSERT INTO channels (server_id, name, type, position, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id, server_id, name, type, position, created_by, created_at", serverID, name, channelType, position, userID).Scan(&channel.ID, &channel.ServerID, &channel.Name, &channel.Type, &channel.Position, &channel.CreatedBy, &channel.CreatedAt)
+	if isUniqueViolation(err) {
+		return Channel{}, fmt.Errorf("%w: channel name already exists in this server", ErrConflict)
+	}
 	if err != nil {
 		return Channel{}, fmt.Errorf("create channel: %w", err)
 	}
@@ -134,6 +142,11 @@ func (service *Service) CreateChannel(ctx context.Context, userID, serverID int6
 		return Channel{}, fmt.Errorf("commit create channel: %w", err)
 	}
 	return channel, nil
+}
+
+func isUniqueViolation(err error) bool {
+	var databaseError *pgconn.PgError
+	return errors.As(err, &databaseError) && databaseError.Code == "23505"
 }
 
 func (service *Service) Leave(ctx context.Context, userID, serverID int64) error {
@@ -188,4 +201,14 @@ func validateChannelName(name string) (string, error) {
 		return "", fmt.Errorf("%w: channel name must contain 1 to 100 characters", ErrValidation)
 	}
 	return name, nil
+}
+
+func validateChannelType(channelType string) (string, error) {
+	if channelType == "" {
+		return "text", nil
+	}
+	if channelType != "text" && channelType != "voice" {
+		return "", fmt.Errorf("%w: channel type must be text or voice", ErrValidation)
+	}
+	return channelType, nil
 }

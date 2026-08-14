@@ -16,9 +16,10 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   channels: {
     list: (serverID: number) => ipcRenderer.invoke('channels:list', serverID),
-    create: (serverID: number, name: string) => ipcRenderer.invoke('channels:create', serverID, name),
+    create: (serverID: number, name: string, type: 'text' | 'voice') => ipcRenderer.invoke('channels:create', serverID, name, type),
   },
   messages: { list: (channelID: number) => ipcRenderer.invoke('messages:list', channelID), create: (channelID: number, content: string) => ipcRenderer.invoke('messages:create', channelID, content) },
+  voice: { join: (channelID: number) => ipcRenderer.invoke('voice:join', channelID) },
   invites: { create: (serverID: number) => ipcRenderer.invoke('invites:create', serverID), createAndCopy: (serverID: number) => ipcRenderer.invoke('invites:create-and-copy', serverID), join: (code: string) => ipcRenderer.invoke('invites:join', code) },
   realtime: {
     onConnected: (callback: () => void): (() => void) => {
