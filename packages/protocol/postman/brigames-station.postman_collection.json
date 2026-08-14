@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "brigames-station API",
-    "description": "Manual checks for operational and Phase 1 identity endpoints.",
+    "description": "Manual checks for operational, identity, and Phase 2 server/channel endpoints.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,7 +10,10 @@
     { "key": "email", "value": "test-member@example.test" },
     { "key": "password", "value": "change-this-password" },
     { "key": "accessToken", "value": "" },
-    { "key": "refreshToken", "value": "" }
+    { "key": "refreshToken", "value": "" },
+    { "key": "serverId", "value": "" },
+    { "key": "serverName", "value": "My test server" },
+    { "key": "channelName", "value": "planning" }
   ],
   "item": [
     {
@@ -51,6 +54,32 @@
         {
           "name": "Logout",
           "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}" }, "url": "{{baseUrl}}/auth/logout" }
+        }
+      ]
+    },
+    {
+      "name": "Servers and Channels (Phase 2)",
+      "item": [
+        {
+          "name": "Create Server",
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{serverName}}\",\n  \"description\": \"Created from Postman\"\n}" }, "url": "{{baseUrl}}/servers" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 201', () => pm.response.to.have.status(201));", "pm.collectionVariables.set('serverId', pm.response.json().id);"] } }]
+        },
+        {
+          "name": "List Servers",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/servers" }
+        },
+        {
+          "name": "List Channels",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/servers/{{serverId}}/channels" }
+        },
+        {
+          "name": "Create Channel",
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{channelName}}\"\n}" }, "url": "{{baseUrl}}/servers/{{serverId}}/channels" }
+        },
+        {
+          "name": "Leave Server",
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/servers/{{serverId}}/leave" }
         }
       ]
     }

@@ -1,4 +1,6 @@
-main { max-width: 28rem; margin: 0 auto; padding: 2rem; font-family: system-ui, sans-serif; }
-header { margin-bottom: 2rem; } strong { text-transform: capitalize; }
-label { display: block; margin: 1rem 0; } input { box-sizing: border-box; display: block; width: 100%; margin-top: .35rem; padding: .6rem; }
-button { padding: .6rem 1rem; } .error { color: #b00020; }
+main { max-width: 62rem; margin: 0 auto; padding: 2rem; font-family: system-ui, sans-serif; }
+header { margin-bottom: 1.5rem; } strong { text-transform: capitalize; } button { padding: .55rem .8rem; cursor: pointer; }
+input { box-sizing: border-box; display: block; width: 100%; margin-top: .35rem; padding: .55rem; } label { display: block; margin: .8rem 0; }
+form { margin-top: 1rem; } .error { color: #b00020; } .account, .channel-heading { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
+.workspace { display: grid; grid-template-columns: minmax(15rem, 22rem) 1fr; gap: 2rem; margin-top: 1.5rem; } aside { border-right: 1px solid #ccc; padding-right: 1.5rem; }
+nav { display: grid; gap: .4rem; } nav button { text-align: left; } nav button.selected { font-weight: 700; } .channels ul { padding-left: 1.2rem; } .login { max-width: 28rem; }

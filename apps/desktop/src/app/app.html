@@ -1,14 +1,34 @@
 <main>
   <header><h1>brigames-station</h1><p>Backend status: <strong>{{ status() }}</strong></p></header>
   @if (user()) {
-    <section><h2>Welcome, {{ user()!.username }}</h2><p>{{ user()!.email }} · {{ user()!.role }}</p><button type="button" (click)="logout()">Logout</button></section>
+    <section class="account"><span>Signed in as <strong>{{ user()!.username }}</strong> ({{ user()!.role }})</span><button type="button" (click)="logout()">Logout</button></section>
+    <section class="workspace">
+      <aside>
+        <h2>Servers</h2>
+        <nav>@for (server of servers(); track server.id) { <button type="button" [class.selected]="selectedServer()?.id === server.id" (click)="selectServer(server)">{{ server.name }}</button> }</nav>
+        <form (ngSubmit)="createServer()">
+          <h3>Create server</h3>
+          <label>Name<input name="serverName" [(ngModel)]="serverName" required maxlength="100"></label>
+          <label>Description<input name="serverDescription" [(ngModel)]="serverDescription" maxlength="1000"></label>
+          <button type="submit" [disabled]="loading()">Create</button>
+        </form>
+      </aside>
+      <section class="channels">
+        @if (selectedServer(); as server) {
+          <div class="channel-heading"><h2>{{ server.name }}</h2><button type="button" (click)="leaveSelectedServer()" [disabled]="loading()">Leave server</button></div>
+          <p>{{ server.description || 'No description.' }}</p><h3>Text channels</h3>
+          <ul>@for (channel of channels(); track channel.id) { <li># {{ channel.name }}</li> }</ul>
+          @if (server.membership_role === 'owner') { <form (ngSubmit)="createChannel()"><label>New channel<input name="channelName" [(ngModel)]="channelName" required maxlength="100"></label><button type="submit" [disabled]="loading()">Add channel</button></form> }
+        } @else { <p>Select a server or create your first one.</p> }
+      </section>
+    </section>
   } @else {
-    <form (ngSubmit)="login()">
+    <form class="login" (ngSubmit)="login()">
       <h2>Sign in</h2>
       <label>Username or email<input name="identity" [(ngModel)]="identity" autocomplete="username" required></label>
       <label>Password<input name="password" [(ngModel)]="password" type="password" autocomplete="current-password" required></label>
-      <button type="submit" [disabled]="loading()">{{ loading() ? 'Signing in…' : 'Login' }}</button>
-      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+      <button type="submit" [disabled]="loading()">{{ loading() ? 'Signing in...' : 'Login' }}</button>
     </form>
   }
+  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 </main>

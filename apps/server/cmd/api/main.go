@@ -15,6 +15,7 @@ import (
 	"brigames-station/internal/database"
 	httpserver "brigames-station/internal/http"
 	"brigames-station/internal/identity"
+	"brigames-station/internal/servers"
 )
 
 func main() {
@@ -39,10 +40,11 @@ func main() {
 		os.Exit(1)
 	}
 	identityService := identity.New(pool, tokenManager, cfg.Auth.RegistrationEnabled, cfg.Auth.RefreshTokenTTL)
+	serverService := servers.New(pool)
 
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,
-		Handler: httpserver.NewHandler(pool, identityService, tokenManager),
+		Handler: httpserver.NewHandler(pool, identityService, tokenManager, serverService),
 	}
 
 	go func() {

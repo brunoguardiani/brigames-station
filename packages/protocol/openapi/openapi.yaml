@@ -142,6 +142,129 @@ paths:
                 $ref: '#/components/schemas/User'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /servers:
+    get:
+      summary: List the authenticated user's servers
+      operationId: listServers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Servers in which the current user is a member.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Server'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create a server
+      description: Creates a server, an owner membership for the caller, and its `general` text channel atomically.
+      operationId: createServer
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServerRequest'
+      responses:
+        '201':
+          description: Server created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Server'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /servers/{serverId}:
+    parameters:
+      - $ref: '#/components/parameters/ServerID'
+    get:
+      summary: Get a server visible to the authenticated user
+      operationId: getServer
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Server details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Server'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ServerNotFound'
+  /servers/{serverId}/channels:
+    parameters:
+      - $ref: '#/components/parameters/ServerID'
+    get:
+      summary: List a server's text channels
+      operationId: listChannels
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Channels visible to the current server member.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Channel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ServerNotFound'
+    post:
+      summary: Create a text channel
+      operationId: createChannel
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChannelRequest'
+      responses:
+        '201':
+          description: Text channel created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ServerNotFound'
+  /servers/{serverId}/leave:
+    parameters:
+      - $ref: '#/components/parameters/ServerID'
+    post:
+      summary: Leave a server
+      operationId: leaveServer
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Membership removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ServerNotFound'
+        '409':
+          $ref: '#/components/responses/LastOwnerConflict'
 components:
   securitySchemes:
     bearerAuth:
@@ -173,6 +296,33 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorStatus'
+    Forbidden:
+      description: The authenticated user does not have the required server role.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorStatus'
+    ServerNotFound:
+      description: The server does not exist or is not visible to the authenticated user.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorStatus'
+    LastOwnerConflict:
+      description: The final owner of a server cannot leave it.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorStatus'
+  parameters:
+    ServerID:
+      name: serverId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
   schemas:
     LivenessStatus:
       type: object
@@ -270,3 +420,66 @@ components:
         role:
           type: string
           enum: [owner, member]
+    CreateServerRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 1000
+    Server:
+      type: object
+      required: [id, name, description, created_by, membership_role, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        created_by:
+          type: integer
+          format: int64
+        membership_role:
+          type: string
+          enum: [owner, member]
+        created_at:
+          type: string
+          format: date-time
+    CreateChannelRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+    Channel:
+      type: object
+      required: [id, server_id, name, type, position, created_by, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        server_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        type:
+          type: string
+          const: text
+        position:
+          type: integer
+          minimum: 0
+        created_by:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time

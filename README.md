@@ -96,6 +96,15 @@ local `.env` and restart the API. Run Register, Login, Me, Refresh, and Logout
 in that order. Login stores the tokens as Postman collection variables. Return
 the registration flag to `false` after testing.
 
+## Test servers and channels
+
+After Login in the imported Postman collection, run the requests in
+`Servers and Channels (Phase 2)` in this order: Create Server, List Servers,
+List Channels, and Create Channel. Create Server stores the returned identifier
+in the collection's `serverId` variable and creates the `general` channel
+automatically. Leaving a server is expected to return `409` for its last
+owner.
+
 ## Run the desktop application
 
 With the backend running, build and open the Electron application:
@@ -119,8 +128,8 @@ $env:ELECTRON_RENDERER_URL = "http://127.0.0.1:4200"
 pnpm --filter @brigames-station/desktop run electron
 ```
 
-The Electron renderer has no Node integration. It obtains the backend health
-status through the limited preload API exposed as `window.desktop.backend`.
+The Electron renderer has no Node integration. It obtains operational,
+authentication, server, and channel data only through the limited preload API.
 
 ## Verify Phase 0
 

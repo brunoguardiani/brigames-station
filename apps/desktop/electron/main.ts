@@ -8,6 +8,8 @@ let accessToken: string | undefined;
 
 type User = { username: string; email: string; role: string };
 type Tokens = { access_token: string; refresh_token: string };
+type Server = { id: number; name: string; description: string; created_by: number; membership_role: 'owner' | 'member'; created_at: string };
+type Channel = { id: number; server_id: number; name: string; type: 'text'; position: number; created_by: number; created_at: string };
 
 function refreshTokenPath(): string { return path.join(app.getPath('userData'), 'refresh-token.bin'); }
 async function saveRefreshToken(token: string): Promise<void> {
@@ -26,6 +28,19 @@ async function authenticate(pathname: string, body: Record<string, string>): Pro
   accessToken = tokens.access_token;
   await saveRefreshToken(tokens.refresh_token);
   return await userResponse.json() as User;
+}
+async function authenticatedRequest<T>(pathname: string, method = 'GET', body?: Record<string, string>): Promise<T> {
+  if (!accessToken) throw new Error('No active session.');
+  const response = await fetch(backendURL + pathname, {
+    method,
+    headers: { Authorization: 'Bearer ' + accessToken, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => null) as { message?: string } | null;
+    throw new Error(error?.message ?? 'Backend request failed.');
+  }
+  return response.status === 204 ? undefined as T : await response.json() as T;
 }
 
 function isBackendHealth(value: unknown): value is { status: 'alive' } {
@@ -83,6 +98,23 @@ ipcMain.handle('auth:logout', async (): Promise<void> => {
   if (refreshToken) await fetch(backendURL + '/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: refreshToken }) }).catch(() => undefined);
   accessToken = undefined;
   await fs.rm(refreshTokenPath(), { force: true });
+});
+ipcMain.handle('servers:list', (): Promise<Server[]> => authenticatedRequest<Server[]>('/servers'));
+ipcMain.handle('servers:create', (_event, name: unknown, description: unknown): Promise<Server> => {
+  if (typeof name !== 'string' || typeof description !== 'string') throw new Error('Invalid server input.');
+  return authenticatedRequest<Server>('/servers', 'POST', { name, description });
+});
+ipcMain.handle('channels:list', (_event, serverID: unknown): Promise<Channel[]> => {
+  if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.');
+  return authenticatedRequest<Channel[]>('/servers/' + serverID + '/channels');
+});
+ipcMain.handle('channels:create', (_event, serverID: unknown, name: unknown): Promise<Channel> => {
+  if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0 || typeof name !== 'string') throw new Error('Invalid channel input.');
+  return authenticatedRequest<Channel>('/servers/' + serverID + '/channels', 'POST', { name });
+});
+ipcMain.handle('servers:leave', (_event, serverID: unknown): Promise<void> => {
+  if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.');
+  return authenticatedRequest<void>('/servers/' + serverID + '/leave', 'POST');
 });
 
 app

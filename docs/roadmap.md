@@ -140,3 +140,49 @@ documented in [`phase-1-identity.md`](./phase-1-identity.md).
   or refresh tokens.
 - [x] Login, session restoration after Electron restart, and logout were
   verified end to end.
+
+## Phase 2 — Servers and Channels
+
+Phase 2 is complete. Its design and acceptance criteria are documented in
+[`phase-2-servers-channels.md`](./phase-2-servers-channels.md).
+
+### Objective
+
+Establish servers, server membership, and text channels for authenticated
+users, including the authorization boundaries needed for future messages.
+
+### Approved Scope
+
+- Authenticated users can create servers and become their server-level owner.
+- New servers receive a default `general` text channel atomically.
+- Server-level roles start with `owner` and `member`.
+- Members can list and leave their servers; the last owner cannot leave.
+- The authenticated desktop shell lists servers and their text channels.
+
+### Explicitly Out of Scope
+
+- Messages, invitations, server deletion, and fine-grained permissions.
+- WebSocket, presence, notifications, and automatic reconnection.
+- Voice, video, screen sharing, LiveKit, and WebRTC.
+
+### Delivered Scope
+
+- [x] Add OpenAPI contracts and Postman coverage for servers, channels, and
+  safe server departure.
+- [x] Add versioned migrations for servers, memberships, and text channels.
+- [x] Create a server, its owner membership, and `general` channel atomically.
+- [x] Enforce membership for server/channel access and owner-only channel
+  creation.
+- [x] Prevent the final server owner from leaving.
+- [x] Extend Electron's typed preload boundary and the Angular authenticated
+  shell for server and channel management.
+
+### Acceptance Criteria
+
+- [x] A signed-in user can create a server and receives an owner membership.
+- [x] Server creation atomically creates exactly one `general` text channel.
+- [x] Non-members cannot access a server or its channels.
+- [x] A non-owner cannot create a channel.
+- [x] A member can leave; the last server owner cannot leave.
+- [x] The desktop lists servers and channels through typed IPC without exposing
+  raw tokens to Angular.
