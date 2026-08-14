@@ -49,7 +49,8 @@ users, servers, channels, messages, authentication, or realtime features.
 
 ## Backend Conventions
 
-- Use Go's `net/http` with a lightweight router.
+- Use Gin for HTTP routing and middleware. Gin runs on Go's standard
+  `net/http` stack.
 - Use `pgx` for PostgreSQL connectivity.
 - Keep database migrations as ordered, versioned SQL files.
 - Keep application code under `apps/server/internal` unless it is intended for

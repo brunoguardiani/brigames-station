@@ -61,12 +61,23 @@ pnpm install
    not load `.env` files by itself.
 
    Migrations are always explicit and are not run by the API. Run them in a
-   separate terminal when versioned SQL files are available:
+   separate terminal:
 
    ```powershell
    Set-Location apps/server
    go run ./cmd/migrate
    ```
+
+   To make the database match a specific migration, pass its identifier. Any
+   later migrations are reversed automatically:
+
+   ```powershell
+   go run ./cmd/migrate 000001_create_users
+   ```
+
+   Use `go run ./cmd/migrate status` to list migration state. The migration
+   format and local rollback guidance are documented in
+   [`apps/server/migrations/README.md`](./apps/server/migrations/README.md).
 
 4. In another terminal, verify the endpoints:
 

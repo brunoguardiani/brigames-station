@@ -120,8 +120,8 @@ Redis is optional and should only be introduced when there is a concrete archite
 
 Phase 0 establishes only the local development foundation. PostgreSQL runs via
 Docker Compose, while Go, Angular, and Electron run locally. HTTP contracts use
-OpenAPI as their source of truth; the backend uses `net/http` with a lightweight
-router, `pgx`, and versioned SQL migrations.
+OpenAPI as their source of truth; the backend uses Gin, `pgx`, and versioned
+SQL migrations.
 
 For this phase, `GET /health` is a liveness endpoint independent of PostgreSQL,
 and `GET /ready` verifies PostgreSQL readiness. Electron must use

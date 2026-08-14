@@ -66,7 +66,7 @@ typed API required by the renderer.
 ## Approved Technical Choices
 
 - HTTP contracts are defined with OpenAPI as the source of truth.
-- Go uses `net/http` with a lightweight router.
+- Go uses Gin for HTTP routing and middleware.
 - PostgreSQL access uses `pgx`.
 - Database migrations are versioned SQL files.
 - TypeScript packages are managed with pnpm workspaces.

@@ -20,7 +20,7 @@ end-to-end path from the desktop application to the Go backend and PostgreSQL.
 - PostgreSQL runs through Docker Compose.
 - Go, Angular, and Electron run locally during development.
 - HTTP contracts use OpenAPI as their source of truth.
-- The backend uses `net/http` with a lightweight router and `pgx`.
+- The backend uses Gin and `pgx`.
 - Migrations are versioned SQL files.
 - Electron uses `contextIsolation=true`, `nodeIntegration=false`, and a minimal
   preload API.
@@ -57,7 +57,7 @@ end-to-end path from the desktop application to the Go backend and PostgreSQL.
 
 - [x] Initialize the Go module and backend entrypoint.
 - [x] Create validated configuration loading.
-- [x] Create the HTTP server using `net/http` and a lightweight router.
+- [x] Create the HTTP server using Gin.
 - [x] Implement structured logging.
 - [x] Implement graceful shutdown.
 - [x] Implement `GET /health` as a liveness endpoint independent of PostgreSQL.
@@ -105,3 +105,10 @@ end-to-end path from the desktop application to the Go backend and PostgreSQL.
 - The desktop application displays the backend availability state.
 - No secrets are committed; all required variables are documented in
   `.env.example`.
+
+## Phase 1 — Identity and Access (Proposed)
+
+The proposed Phase 1 plan is documented in
+[`phase-1-identity.md`](./phase-1-identity.md). Implementation must not start
+until its registration, identity, session-duration, and first-account policies
+are approved.
