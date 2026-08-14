@@ -2,10 +2,15 @@ package config
 
 import (
 	"fmt"
+	"net/mail"
 	"os"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
+
+var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{3,32}$`)
 
 type Config struct {
 	HTTPAddr    string
@@ -20,6 +25,12 @@ type AuthConfig struct {
 	JWTAudience         string
 	AccessTokenTTL      time.Duration
 	RefreshTokenTTL     time.Duration
+}
+
+type OwnerSeedConfig struct {
+	Username string
+	Email    string
+	Password string
 }
 
 func Load() (Config, error) {
@@ -43,6 +54,25 @@ func Load() (Config, error) {
 		DatabaseURL: databaseURL,
 		Auth:        auth,
 	}, nil
+}
+
+func LoadOwnerSeedConfig() (OwnerSeedConfig, error) {
+	owner := OwnerSeedConfig{
+		Username: strings.TrimSpace(os.Getenv("OWNER_USERNAME")),
+		Email:    strings.TrimSpace(os.Getenv("OWNER_EMAIL")),
+		Password: os.Getenv("OWNER_PASSWORD"),
+	}
+	if !usernamePattern.MatchString(owner.Username) {
+		return OwnerSeedConfig{}, fmt.Errorf("OWNER_USERNAME must contain 3 to 32 letters, numbers, underscores, or hyphens")
+	}
+	address, err := mail.ParseAddress(owner.Email)
+	if err != nil || address.Address != owner.Email {
+		return OwnerSeedConfig{}, fmt.Errorf("OWNER_EMAIL must be a valid email address")
+	}
+	if len(owner.Password) < 12 {
+		return OwnerSeedConfig{}, fmt.Errorf("OWNER_PASSWORD must contain at least 12 characters")
+	}
+	return owner, nil
 }
 
 func loadAuthConfig() (AuthConfig, error) {

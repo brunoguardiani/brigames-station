@@ -36,3 +36,27 @@ func TestLoadRejectsShortJWTSecret(t *testing.T) {
 		t.Fatal("Load() error = nil, want short JWT secret error")
 	}
 }
+
+func TestLoadOwnerSeedConfig(t *testing.T) {
+	t.Setenv("OWNER_USERNAME", "bruno_guardiani")
+	t.Setenv("OWNER_EMAIL", "bruno@example.com")
+	t.Setenv("OWNER_PASSWORD", "a secure test password")
+
+	owner, err := LoadOwnerSeedConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner.Username != "bruno_guardiani" || owner.Email != "bruno@example.com" {
+		t.Fatalf("owner = %+v, want configured username and email", owner)
+	}
+}
+
+func TestLoadOwnerSeedConfigRejectsShortPassword(t *testing.T) {
+	t.Setenv("OWNER_USERNAME", "bruno")
+	t.Setenv("OWNER_EMAIL", "bruno@example.com")
+	t.Setenv("OWNER_PASSWORD", "short")
+
+	if _, err := LoadOwnerSeedConfig(); err == nil {
+		t.Fatal("LoadOwnerSeedConfig() error = nil, want password validation error")
+	}
+}

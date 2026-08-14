@@ -60,8 +60,10 @@ the next model is `roles ↔ permissions` through `role_permissions`; users do
 not need to change for that addition.
 
 Migrations create only schema. An explicit `seed-owner` command creates the
-first owner from `OWNER_USERNAME` and `OWNER_PASSWORD` environment variables.
-No password or password hash is committed to source control.
+first owner from `OWNER_USERNAME`, `OWNER_EMAIL`, and `OWNER_PASSWORD`
+environment variables. It refuses to run when an owner already exists. No
+password or password hash is committed to source control; remove
+`OWNER_PASSWORD` from the local environment after successful bootstrap.
 
 ### Desktop boundary
 
