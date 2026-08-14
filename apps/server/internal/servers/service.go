@@ -98,6 +98,46 @@ func (service *Service) ListChannels(ctx context.Context, userID, serverID int64
 	return items, nil
 }
 
+func (service *Service) ListMembers(ctx context.Context, userID, serverID int64) ([]Member, error) {
+	if _, err := service.Get(ctx, userID, serverID); err != nil {
+		return nil, err
+	}
+	rows, err := service.pool.Query(ctx, "SELECT users.id, users.username, server_memberships.role FROM server_memberships JOIN users ON users.id = server_memberships.user_id WHERE server_memberships.server_id = $1 ORDER BY users.username, users.id", serverID)
+	if err != nil {
+		return nil, fmt.Errorf("list server members: %w", err)
+	}
+	defer rows.Close()
+	items := make([]Member, 0)
+	for rows.Next() {
+		var item Member
+		if err := rows.Scan(&item.ID, &item.Username, &item.Role); err != nil {
+			return nil, fmt.Errorf("scan server member: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate server members: %w", err)
+	}
+	return items, nil
+}
+
+func (service *Service) SharedMemberIDs(ctx context.Context, userID int64) ([]int64, error) {
+	rows, err := service.pool.Query(ctx, "SELECT DISTINCT peer.user_id FROM server_memberships own JOIN server_memberships peer ON peer.server_id = own.server_id WHERE own.user_id = $1", userID)
+	if err != nil {
+		return nil, fmt.Errorf("list shared members: %w", err)
+	}
+	defer rows.Close()
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan shared member: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (service *Service) CreateChannel(ctx context.Context, userID, serverID int64, name, channelType string) (Channel, error) {
 	name, err := validateChannelName(name)
 	if err != nil {

@@ -36,6 +36,7 @@ function isTrustedRendererURL(url: string): boolean {
 type User = { username: string; email: string; role: string };
 type Tokens = { access_token: string; refresh_token: string };
 type Server = { id: number; name: string; description: string; created_by: number; membership_role: 'owner' | 'member'; created_at: string };
+type ServerMember = { id: number; username: string; role: 'owner' | 'member'; online: boolean };
 type Channel = { id: number; server_id: number; name: string; type: 'text' | 'voice'; position: number; created_by: number; created_at: string };
 type Message = { id: number; channel_id: number; author_id: number; author_username: string; content: string; created_at: string };
 type MessagePage = { messages: Message[]; next_before: number | null };
@@ -79,6 +80,8 @@ function connectRealtime(): void {
         sendToRenderers('realtime:connected');
       } else if (message.type === 'message.created' && message.data) {
         sendToRenderers('realtime:message-created', message.data);
+      } else if (message.type === 'presence.changed' && message.data) {
+        sendToRenderers('realtime:presence-changed', message.data);
       }
     } catch { /* Ignore invalid realtime payloads. */ }
   });
@@ -216,6 +219,10 @@ ipcMain.handle('auth:logout', async (): Promise<void> => {
   await fs.rm(refreshTokenPath(), { force: true });
 });
 ipcMain.handle('servers:list', (): Promise<Server[]> => authenticatedRequest<Server[]>('/servers'));
+ipcMain.handle('servers:list-members', (_event, serverID: unknown): Promise<ServerMember[]> => {
+  if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.');
+  return authenticatedRequest<ServerMember[]>('/servers/' + serverID + '/members');
+});
 ipcMain.handle('servers:create', (_event, name: unknown, description: unknown): Promise<Server> => {
   if (typeof name !== 'string' || typeof description !== 'string') throw new Error('Invalid server input.');
   return authenticatedRequest<Server>('/servers', 'POST', { name, description });

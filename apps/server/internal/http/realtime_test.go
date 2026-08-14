@@ -25,7 +25,7 @@ func TestRealtimeHandlerAuthenticatesAndDeliversEvents(t *testing.T) {
 		t.Fatalf("issue access token: %v", err)
 	}
 	hub := realtime.NewHub()
-	server := httptest.NewServer(realtimeHandler(hub, tokens))
+	server := httptest.NewServer(realtimeHandler(hub, tokens, nil))
 	defer server.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -31,3 +31,9 @@ type Channel struct {
 	CreatedBy int64     `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+type Member struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+	Role     string `json:"role"`
+}

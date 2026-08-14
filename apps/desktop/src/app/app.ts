@@ -13,6 +13,7 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly user = signal<User | null>(null);
   protected readonly servers = signal<Server[]>([]);
   protected readonly channels = signal<Channel[]>([]);
+  protected readonly members = signal<ServerMember[]>([]);
   protected readonly selectedServer = signal<Server | null>(null);
   protected readonly selectedChannel = signal<Channel | null>(null);
   protected readonly messages = signal<Message[]>([]);
@@ -22,10 +23,12 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly voiceChannel = signal<Channel | null>(null);
   protected readonly voiceParticipants = signal<VoiceParticipant[]>([]);
   protected readonly activeSpeakerIDs = signal<string[]>([]);
+  protected readonly microphoneMuted = signal(false);
   protected identity = ''; protected password = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = ''; protected channelType: 'text' | 'voice' = 'text'; protected messageContent = ''; protected inviteCode = ''; protected createdInvite = '';
   private healthCheckTimer?: ReturnType<typeof setInterval>;
   private removeRealtimeConnectedListener?: () => void;
   private removeRealtimeMessageListener?: () => void;
+  private removeRealtimePresenceListener?: () => void;
   private voiceRoom?: Room;
   private voiceAudioElements: HTMLAudioElement[] = [];
 
@@ -41,11 +44,15 @@ export class AppComponent implements OnInit, OnDestroy {
       if (this.selectedChannel()?.id !== message.channel_id) return;
       this.messages.update((items) => items.some((item) => item.id === message.id) ? items : [...items, message]);
     });
+    this.removeRealtimePresenceListener = window.desktop.realtime.onPresenceChanged((presence) => {
+      this.members.update((members) => members.map((member) => member.id === presence.user_id ? { ...member, online: presence.online } : member));
+    });
   }
   ngOnDestroy(): void {
     if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
     this.removeRealtimeConnectedListener?.();
     this.removeRealtimeMessageListener?.();
+    this.removeRealtimePresenceListener?.();
     void this.leaveVoiceChannel();
   }
   @HostListener('document:click', ['$event'])
@@ -72,8 +79,8 @@ export class AppComponent implements OnInit, OnDestroy {
     finally { this.loading.set(false); }
   }
   protected async selectServer(server: Server): Promise<void> {
-    this.error.set(''); this.selectedServer.set(server); this.selectedChannel.set(null); this.messages.set([]); this.channels.set([]);
-    try { this.channels.set(await window.desktop.channels.list(server.id)); }
+    this.error.set(''); this.selectedServer.set(server); this.selectedChannel.set(null); this.messages.set([]); this.channels.set([]); this.members.set([]);
+    try { const [channels, members] = await Promise.all([window.desktop.channels.list(server.id), window.desktop.servers.listMembers(server.id)]); this.channels.set(channels); this.members.set(members); }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to load channels.')); }
   }
   protected async selectChannel(channel: Channel): Promise<void> { if (channel.type !== 'text') return; this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
@@ -84,7 +91,8 @@ export class AppComponent implements OnInit, OnDestroy {
     catch (error) { this.error.set(this.messageFor(error, 'Unable to join voice channel.')); }
     finally { this.loading.set(false); }
   }
-  protected async leaveVoiceChannel(): Promise<void> { const room=this.voiceRoom; this.voiceRoom=undefined; this.voiceChannel.set(null); this.voiceParticipants.set([]); this.activeSpeakerIDs.set([]); this.removeVoiceAudio(); if (room) await room.disconnect(); }
+  protected async leaveVoiceChannel(): Promise<void> { const room=this.voiceRoom; this.voiceRoom=undefined; this.voiceChannel.set(null); this.voiceParticipants.set([]); this.activeSpeakerIDs.set([]); this.microphoneMuted.set(false); this.removeVoiceAudio(); if (room) await room.disconnect(); }
+  protected async toggleMicrophone(): Promise<void> { if (!this.voiceRoom) return; const muted = !this.microphoneMuted(); await this.voiceRoom.localParticipant.setMicrophoneEnabled(!muted); this.microphoneMuted.set(muted); }
   protected isSpeaking(participant: VoiceParticipant): boolean { return this.activeSpeakerIDs().includes(participant.identity); }
   private removeVoiceAudio(): void { for (const audio of this.voiceAudioElements) audio.remove(); this.voiceAudioElements = []; }
   protected async sendMessage(): Promise<void> { const channel = this.selectedChannel(); if (!channel) return; this.loading.set(true); try { await window.desktop.messages.create(channel.id, this.messageContent); this.messageContent = ''; await this.selectChannel(channel); } catch (error) { this.error.set(this.messageFor(error, 'Unable to send message.')); } finally { this.loading.set(false); } }
@@ -116,10 +124,11 @@ export class AppComponent implements OnInit, OnDestroy {
   private async loadServers(selectID?: number): Promise<void> {
     const servers = await window.desktop.servers.list(); this.servers.set(servers);
     const selected = this.selectedServer(); const next = selectID ? servers.find((server) => server.id === selectID) : selected && servers.find((server) => server.id === selected.id);
-    if (next) await this.selectServer(next); else { this.selectedServer.set(null); this.channels.set([]); }
+    if (next) await this.selectServer(next); else { this.selectedServer.set(null); this.channels.set([]); this.members.set([]); }
   }
   private async refreshBackendStatus(): Promise<void> { try { const health = await window.desktop.backend.getHealth(); this.status.set(health.status === 'alive' ? 'available' : 'unavailable'); } catch { this.status.set('unavailable'); } }
   private messageFor(error: unknown, fallback: string): string { return error instanceof Error ? error.message : fallback; }
 }
 
 type VoiceParticipant = { identity: string; name: string };
+type ServerMember = { id: number; username: string; role: 'owner' | 'member'; online: boolean };

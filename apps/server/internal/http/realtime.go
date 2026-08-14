@@ -3,6 +3,7 @@ package httpserver
 import (
 	"brigames-station/internal/auth"
 	"brigames-station/internal/realtime"
+	"brigames-station/internal/servers"
 	"context"
 	"encoding/json"
 	"github.com/coder/websocket"
@@ -10,7 +11,7 @@ import (
 	"time"
 )
 
-func realtimeHandler(hub *realtime.Hub, tokens *auth.TokenManager) http.HandlerFunc {
+func realtimeHandler(hub *realtime.Hub, tokens *auth.TokenManager, serverService *servers.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, e := websocket.Accept(w, r, nil)
 		if e != nil {
@@ -35,8 +36,15 @@ func realtimeHandler(hub *realtime.Hub, tokens *auth.TokenManager) http.HandlerF
 		if e != nil {
 			return
 		}
-		unregister := hub.Register(claims.Subject, conn)
-		defer unregister()
+		wasOffline, unregister := hub.Register(claims.Subject, conn)
+		if wasOffline && serverService != nil {
+			publishPresence(r.Context(), hub, serverService, claims.Subject, true)
+		}
+		defer func() {
+			if unregister() && serverService != nil {
+				publishPresence(context.Background(), hub, serverService, claims.Subject, false)
+			}
+		}()
 		_ = conn.Write(context.Background(), websocket.MessageText, []byte(`{"type":"authenticated"}`))
 		for {
 			if _, _, e = conn.Read(context.Background()); e != nil {
@@ -44,4 +52,12 @@ func realtimeHandler(hub *realtime.Hub, tokens *auth.TokenManager) http.HandlerF
 			}
 		}
 	}
+}
+
+func publishPresence(ctx context.Context, hub *realtime.Hub, service *servers.Service, userID int64, online bool) {
+	memberIDs, err := service.SharedMemberIDs(ctx, userID)
+	if err != nil {
+		return
+	}
+	hub.Publish(memberIDs, realtime.Event{Type: "presence.changed", Data: map[string]any{"user_id": userID, "online": online}})
 }

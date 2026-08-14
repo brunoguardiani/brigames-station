@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   servers: {
     list: () => ipcRenderer.invoke('servers:list'),
+    listMembers: (serverID: number) => ipcRenderer.invoke('servers:list-members', serverID),
     create: (name: string, description: string) => ipcRenderer.invoke('servers:create', name, description),
     leave: (serverID: number) => ipcRenderer.invoke('servers:leave', serverID),
   },
@@ -31,6 +32,11 @@ contextBridge.exposeInMainWorld('desktop', {
       const listener = (_event: Electron.IpcRendererEvent, message: unknown) => callback(message);
       ipcRenderer.on('realtime:message-created', listener);
       return () => ipcRenderer.removeListener('realtime:message-created', listener);
+    },
+    onPresenceChanged: (callback: (presence: unknown) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, presence: unknown) => callback(presence);
+      ipcRenderer.on('realtime:presence-changed', listener);
+      return () => ipcRenderer.removeListener('realtime:presence-changed', listener);
     },
   },
 });

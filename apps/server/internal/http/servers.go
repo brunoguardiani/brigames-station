@@ -6,11 +6,12 @@ import (
 	"strconv"
 
 	"brigames-station/internal/auth"
+	"brigames-station/internal/realtime"
 	"brigames-station/internal/servers"
 	"github.com/gin-gonic/gin"
 )
 
-func registerServerRoutes(router *gin.Engine, service *servers.Service, tokens *auth.TokenManager) {
+func registerServerRoutes(router *gin.Engine, service *servers.Service, tokens *auth.TokenManager, hub *realtime.Hub) {
 	protected := router.Group("/servers")
 	protected.Use(requireJWT(tokens))
 	protected.GET("", func(context *gin.Context) {
@@ -60,6 +61,22 @@ func registerServerRoutes(router *gin.Engine, service *servers.Service, tokens *
 			return
 		}
 		context.JSON(http.StatusOK, items)
+	})
+	protected.GET("/:serverId/members", func(context *gin.Context) {
+		serverID, ok := serverIDFromPath(context)
+		if !ok {
+			return
+		}
+		items, err := service.ListMembers(context.Request.Context(), requiredUserID(context), serverID)
+		if err != nil {
+			serverError(context, err)
+			return
+		}
+		response := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			response = append(response, map[string]any{"id": item.ID, "username": item.Username, "role": item.Role, "online": hub.IsOnline(item.ID)})
+		}
+		context.JSON(http.StatusOK, response)
 	})
 	protected.POST("/:serverId/channels", func(context *gin.Context) {
 		serverID, ok := serverIDFromPath(context)

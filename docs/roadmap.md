@@ -248,6 +248,40 @@ operational limits are documented in [`phase-6-voice.md`](./phase-6-voice.md).
 
 ### Deferred Scope
 
-- Video, screen sharing, recording, device selection, mute controls, and
-  participant presence.
+- Video, screen sharing, recording, and device selection.
 - Public deployment, TLS, TURN configuration, and production LiveKit secrets.
+
+## Phase 7 — Presence and Voice Controls
+
+Phase 7 is complete. It extends the local desktop experience with presence
+visibility and essential voice controls while retaining the single-process
+realtime hub appropriate for the current deployment model.
+
+### Delivered Scope
+
+- [x] Add an authenticated server-members endpoint that returns membership
+  role and current in-process online state.
+- [x] Publish `presence.changed` only to users sharing at least one server
+  with the connecting or disconnecting member.
+- [x] Extend the typed Electron IPC boundary for member listing and presence
+  events; tokens remain in the Electron main process.
+- [x] Display online and offline members in a right-side server panel.
+- [x] Display voice-channel participants beneath the active voice channel.
+- [x] Indicate the active speaker with a green ring around their avatar.
+- [x] Add compact microphone mute and call-leave controls above the account
+  logout area.
+
+### Operational Limits
+
+- Presence reflects authenticated WebSocket connections in the current Go
+  process; it is not durable and is not shared between backend instances.
+- Redis, distributed fan-out, and cross-instance presence remain out of scope.
+
+### Acceptance Criteria
+
+- [x] Only a server member can list the members of that server.
+- [x] Members sharing a server receive online/offline updates without polling.
+- [x] The desktop visibly distinguishes online from offline members.
+- [x] Voice participants and active speakers are visible in the desktop UI.
+- [x] A connected user can mute/unmute their microphone and leave a call using
+  icon-only controls.

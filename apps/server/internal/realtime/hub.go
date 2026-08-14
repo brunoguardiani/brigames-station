@@ -22,22 +22,30 @@ type client struct {
 }
 
 func NewHub() *Hub { return &Hub{clients: make(map[int64]map[*client]struct{})} }
-func (h *Hub) Register(userID int64, conn *websocket.Conn) func() {
+func (h *Hub) Register(userID int64, conn *websocket.Conn) (bool, func() bool) {
 	c := &client{conn: conn}
 	h.mu.Lock()
+	wasOffline := len(h.clients[userID]) == 0
 	if h.clients[userID] == nil {
 		h.clients[userID] = map[*client]struct{}{}
 	}
 	h.clients[userID][c] = struct{}{}
 	h.mu.Unlock()
-	return func() {
+	return wasOffline, func() bool {
 		h.mu.Lock()
+		defer h.mu.Unlock()
 		delete(h.clients[userID], c)
+		wentOffline := len(h.clients[userID]) == 0
 		if len(h.clients[userID]) == 0 {
 			delete(h.clients, userID)
 		}
-		h.mu.Unlock()
+		return wentOffline
 	}
+}
+func (h *Hub) IsOnline(userID int64) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients[userID]) > 0
 }
 func (h *Hub) Publish(userIDs []int64, event Event) {
 	body, e := json.Marshal(event)

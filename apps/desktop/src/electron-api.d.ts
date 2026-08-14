@@ -14,6 +14,7 @@ interface Window {
     };
     servers: {
       list(): Promise<Server[]>;
+      listMembers(serverID: number): Promise<ServerMember[]>;
       create(name: string, description: string): Promise<Server>;
       leave(serverID: number): Promise<void>;
     };
@@ -27,6 +28,7 @@ interface Window {
     realtime: {
       onConnected(callback: () => void): () => void;
       onMessageCreated(callback: (message: Message) => void): () => void;
+      onPresenceChanged(callback: (presence: { user_id: number; online: boolean }) => void): () => void;
     };
   };
 }
@@ -51,3 +53,4 @@ interface Channel {
 }
 interface Message { id: number; channel_id: number; author_id: number; author_username: string; content: string; created_at: string; }
 interface MessagePage { messages: Message[]; next_before: number | null; }
+interface ServerMember { id: number; username: string; role: 'owner' | 'member'; online: boolean; }
