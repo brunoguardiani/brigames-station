@@ -106,9 +106,37 @@ end-to-end path from the desktop application to the Go backend and PostgreSQL.
 - No secrets are committed; all required variables are documented in
   `.env.example`.
 
-## Phase 1 — Identity and Access (Proposed)
+## Phase 1 — Identity and Access
 
-The proposed Phase 1 plan is documented in
-[`phase-1-identity.md`](./phase-1-identity.md). Implementation must not start
-until its registration, identity, session-duration, and first-account policies
-are approved.
+Phase 1 is complete. Its approved design and implementation detail are
+documented in [`phase-1-identity.md`](./phase-1-identity.md).
+
+### Delivered Scope
+
+- [x] Add OpenAPI contracts for registration, login, refresh, logout, and
+  current-user operations.
+- [x] Add versioned SQL migrations for global roles, users, and refresh tokens.
+- [x] Add secure first-owner bootstrap through `cmd/seed-owner`; no
+  credential is stored in migrations or source control.
+- [x] Add Argon2id password hashing, JWT access tokens, opaque hashed refresh
+  tokens, refresh-token rotation, and logout revocation.
+- [x] Add authentication middleware and the protected `GET /me` endpoint.
+- [x] Add desktop login, secure encrypted refresh-token storage in the
+  Electron main process, session restoration, and logout.
+- [x] Add automated backend tests and a Postman collection for manual API
+  verification.
+
+### Acceptance Criteria
+
+- [x] Credentials are never stored or logged in plaintext.
+- [x] Passwords use Argon2id hashes and the JWT signing secret remains a local
+  environment value.
+- [x] Login accepts either username or email and returns a short-lived access
+  token plus a rotating opaque refresh token.
+- [x] Protected endpoints reject missing, invalid, and expired access tokens.
+- [x] Refresh tokens are stored as hashes, expire after the configured period,
+  rotate on refresh, and are revoked by logout.
+- [x] The Angular renderer has no direct access to Node APIs, access tokens,
+  or refresh tokens.
+- [x] Login, session restoration after Electron restart, and logout were
+  verified end to end.
