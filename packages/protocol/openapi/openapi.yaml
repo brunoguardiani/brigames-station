@@ -571,11 +571,12 @@ components:
         content: { type: string, minLength: 1, maxLength: 4000 }
     Message:
       type: object
-      required: [id, channel_id, author_id, content, created_at]
+      required: [id, channel_id, author_id, author_username, content, created_at]
       properties:
         id: { type: integer, format: int64 }
         channel_id: { type: integer, format: int64 }
         author_id: { type: integer, format: int64 }
+        author_username: { type: string }
         content: { type: string }
         created_at: { type: string, format: date-time }
     MessagePage:
@@ -583,4 +584,4 @@ components:
       required: [messages]
       properties:
         messages: { type: array, items: { $ref: '#/components/schemas/Message' } }
-        next_before: { type: integer, format: int64, nullable: true }
+        next_before: { type: [integer, 'null'], format: int64 }

@@ -14,7 +14,7 @@
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
             "baseHref": "./",
-            "assets": [],
+            "assets": ["src/assets"],
             "styles": ["src/styles.css"],
             "outputPath": {
               "base": "dist/desktop",

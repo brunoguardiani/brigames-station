@@ -22,7 +22,7 @@ interface Window {
       create(serverID: number, name: string): Promise<Channel>;
     };
     messages: { list(channelID: number): Promise<MessagePage>; create(channelID: number, content: string): Promise<Message>; };
-    invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
+    invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; createAndCopy(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
     realtime: {
       onConnected(callback: () => void): () => void;
       onMessageCreated(callback: (message: Message) => void): () => void;
@@ -48,5 +48,5 @@ interface Channel {
   created_by: number;
   created_at: string;
 }
-interface Message { id: number; channel_id: number; author_id: number; content: string; created_at: string; }
+interface Message { id: number; channel_id: number; author_id: number; author_username: string; content: string; created_at: string; }
 interface MessagePage { messages: Message[]; next_before: number | null; }

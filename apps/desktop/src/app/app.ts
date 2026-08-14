@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 type BackendState = 'checking' | 'available' | 'unavailable';
@@ -17,6 +17,7 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly messages = signal<Message[]>([]);
   protected readonly error = signal('');
   protected readonly loading = signal(false);
+  protected readonly leaveConfirmationOpen = signal(false);
   protected identity = ''; protected password = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = ''; protected messageContent = ''; protected inviteCode = ''; protected createdInvite = '';
   private healthCheckTimer?: ReturnType<typeof setInterval>;
   private removeRealtimeConnectedListener?: () => void;
@@ -40,6 +41,16 @@ export class AppComponent implements OnInit, OnDestroy {
     this.removeRealtimeConnectedListener?.();
     this.removeRealtimeMessageListener?.();
   }
+  @HostListener('document:click', ['$event'])
+  protected closePopoversWhenClickingOutside(event: MouseEvent): void {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const containingDetails = target.closest<HTMLDetailsElement>('details.create-server, details.join-server, details.actions');
+    document.querySelectorAll<HTMLDetailsElement>('details.create-server[open], details.join-server[open], details.actions[open]').forEach((details) => {
+      if (details !== containingDetails) details.open = false;
+    });
+  }
   protected async login(): Promise<void> {
     this.loading.set(true); this.error.set('');
     try { this.user.set(await window.desktop.auth.login(this.identity, this.password)); this.password = ''; await this.loadServers(); }
@@ -60,7 +71,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   protected async selectChannel(channel: Channel): Promise<void> { this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
   protected async sendMessage(): Promise<void> { const channel = this.selectedChannel(); if (!channel) return; this.loading.set(true); try { await window.desktop.messages.create(channel.id, this.messageContent); this.messageContent = ''; await this.selectChannel(channel); } catch (error) { this.error.set(this.messageFor(error, 'Unable to send message.')); } finally { this.loading.set(false); } }
-  protected async createInvite(): Promise<void> { const server=this.selectedServer(); if(!server)return; try { this.createdInvite=(await window.desktop.invites.create(server.id)).code; } catch(error){this.error.set(this.messageFor(error,'Unable to create invite.'));} }
+  protected async createInvite(): Promise<void> { const server=this.selectedServer(); if(!server)return; try { this.createdInvite=(await window.desktop.invites.createAndCopy(server.id)).code; } catch(error){this.error.set(this.messageFor(error,'Unable to create invite.'));} }
   protected async joinInvite(): Promise<void> { try { const joined=await window.desktop.invites.join(this.inviteCode); this.inviteCode=''; await this.loadServers(joined.server_id); } catch(error){this.error.set(this.messageFor(error,'Unable to join invite.'));} }
   protected async createChannel(): Promise<void> {
     const server = this.selectedServer(); if (!server) return;
@@ -75,6 +86,14 @@ export class AppComponent implements OnInit, OnDestroy {
     try { await window.desktop.servers.leave(server.id); await this.loadServers(); }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to leave server.')); }
     finally { this.loading.set(false); }
+  }
+  protected requestLeaveServer(): void {
+    if (this.selectedServer()) this.leaveConfirmationOpen.set(true);
+  }
+  protected cancelLeaveServer(): void { this.leaveConfirmationOpen.set(false); }
+  protected async confirmLeaveServer(): Promise<void> {
+    this.leaveConfirmationOpen.set(false);
+    await this.leaveSelectedServer();
   }
   private async restoreSession(): Promise<void> { try { this.user.set(await window.desktop.auth.currentSession()); if (this.user()) await this.loadServers(); } catch { this.user.set(null); } }
   private async loadServers(selectID?: number): Promise<void> {

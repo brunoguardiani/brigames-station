@@ -22,6 +22,7 @@ pnpm-debug.log*
 release/
 *.asar
 apps/desktop/.electron-user-*/
+.electron-user-*/
 
 # Go
 bin/

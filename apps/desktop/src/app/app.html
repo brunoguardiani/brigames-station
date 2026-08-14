@@ -1,36 +1,36 @@
-<main>
-  <header><h1>brigames-station</h1><p>Backend status: <strong>{{ status() }}</strong></p></header>
+<main class="app-shell">
+  <header class="window-titlebar"><span>brigames-station</span></header>
+  <style>.window-titlebar{position:fixed;z-index:20;top:0;right:0;left:0;height:40px;display:flex;align-items:center;padding-left:16px;color:#a3abbc;background:#14161d;font-size:12px;font-weight:700;letter-spacing:.03em;-webkit-app-region:drag;user-select:none}.server-rail{top:40px!important}.channel-sidebar{top:40px!important}.conversation-panel{padding-top:40px}.login-view{padding-top:calc(2rem + 40px)!important}.login-intro{display:grid;justify-items:center;text-align:center}.login-mascot{width:min(100%,20rem);height:auto;display:block;margin:0 auto 1rem;filter:drop-shadow(0 16px 28px rgba(0,0,0,.3))}.login-quote{max-width:22rem;margin:0;color:#d9d6ff;font-size:1.2rem;font-style:italic;line-height:1.5}.login-intro .connection-status{margin-top:1.5rem}.popover .action-button{display:flex;align-items:center;gap:.65rem;width:100%;padding:.65rem;border-radius:.45rem;color:var(--text);font-weight:700;text-align:left;background:transparent}.popover .action-button:hover{background:var(--hover)}.action-icon{display:grid;place-items:center;width:1.2rem;height:1.2rem;border-radius:50%;color:#fff;background:var(--accent);font-size:1.1rem;line-height:1}.channel-action{margin-top:.6rem;padding-top:.6rem;border-top:1px solid #41495b}.leave-action{margin-top:.65rem;padding-top:.7rem!important;border-top:1px solid #41495b;border-radius:.45rem!important;color:#ff858b!important}.leave-action:hover{color:#fff!important;background:#d54f58!important}.leave-icon{width:1.2rem;height:1.2rem;color:#fff;flex:0 0 auto}.modal-backdrop{position:fixed;z-index:40;inset:0;display:grid;place-items:center;padding:1.5rem;background:#090b10aa}.confirmation-modal{width:min(100%,24rem);padding:1.35rem;border:1px solid #444c5e;border-radius:.9rem;color:var(--text);background:#272c3a;box-shadow:0 1.5rem 4rem #000a}.confirmation-modal h2{margin:0;font-size:1.2rem}.confirmation-modal p{margin:.7rem 0 1.25rem;color:var(--muted);line-height:1.5}.confirmation-actions{display:flex;justify-content:flex-end;gap:.65rem}.confirmation-actions button{padding:.6rem .85rem;border-radius:.45rem;font-weight:700;color:var(--text);background:var(--raised)}.confirmation-actions button:hover{background:var(--hover)}.confirmation-actions .confirm-leave{color:#fff;background:#d54f58}.confirmation-actions .confirm-leave:hover{background:#e05d65}.join-server{position:relative}.join-server summary{display:grid;place-items:center;width:2.8rem;height:2.8rem;border-radius:50%;list-style:none;color:#a3abbc;background:var(--raised);transition:.18s}.join-server summary::-webkit-details-marker{display:none}.join-server summary:hover{border-radius:.85rem;color:#fff;background:var(--accent)}.join-server form{position:absolute;left:3.5rem;bottom:0;width:18rem;padding:1rem;border:1px solid #404758;border-radius:.75rem;background:#272c3a;box-shadow:0 1rem 2rem #0008}.join-server h2{margin:0 0 .9rem;font-size:1rem}.join-server label{display:grid;gap:.35rem;color:var(--muted);font-size:.78rem}.join-server input{padding:.55rem;border-radius:.4rem;color:var(--text);background:#151825}.join-server button{margin-top:.8rem;padding:.65rem .9rem;border-radius:.45rem;color:#fff;background:var(--accent);font-weight:700}</style>
   @if (user()) {
-    <section class="account"><span>Signed in as <strong>{{ user()!.username }}</strong> ({{ user()!.role }})</span><form (ngSubmit)="joinInvite()"><input name="inviteCode" [(ngModel)]="inviteCode" placeholder="Invite code" required><button>Join</button></form><button type="button" (click)="logout()">Logout</button></section>
-    <section class="workspace">
-      <aside>
-        <h2>Servers</h2>
-        <nav>@for (server of servers(); track server.id) { <button type="button" [class.selected]="selectedServer()?.id === server.id" (click)="selectServer(server)">{{ server.name }}</button> }</nav>
-        <form (ngSubmit)="createServer()">
-          <h3>Create server</h3>
-          <label>Name<input name="serverName" [(ngModel)]="serverName" required maxlength="100"></label>
-          <label>Description<input name="serverDescription" [(ngModel)]="serverDescription" maxlength="1000"></label>
-          <button type="submit" [disabled]="loading()">Create</button>
-        </form>
-      </aside>
-      <section class="channels">
-        @if (selectedServer(); as server) {
-          <div class="channel-heading"><h2>{{ server.name }}</h2><button type="button" (click)="leaveSelectedServer()" [disabled]="loading()">Leave server</button></div>
-          <p>{{ server.description || 'No description.' }}</p><h3>Text channels</h3>
-          @if (server.membership_role === 'owner') { <button type="button" (click)="createInvite()">Create 24-hour invite</button>@if(createdInvite){<p>Invite: {{ createdInvite }}</p>} }
-          <ul>@for (channel of channels(); track channel.id) { <li><button type="button" (click)="selectChannel(channel)"># {{ channel.name }}</button></li> }</ul>
-          @if (server.membership_role === 'owner') { <form (ngSubmit)="createChannel()"><label>New channel<input name="channelName" [(ngModel)]="channelName" required maxlength="100"></label><button type="submit" [disabled]="loading()">Add channel</button></form> }
-          @if (selectedChannel(); as channel) { <section><h3># {{ channel.name }}</h3><div class="messages">@for (message of messages(); track message.id) { <p>{{ message.content }}</p> }</div><form (ngSubmit)="sendMessage()"><label>Message<input name="messageContent" [(ngModel)]="messageContent" required maxlength="4000"></label><button type="submit" [disabled]="loading()">Send</button></form></section> }
-        } @else { <p>Select a server or create your first one.</p> }
-      </section>
+    <aside class="server-rail" aria-label="Servers">
+      <img class="brand" src="assets/brigames-station-icon.png" alt="brigames-station"><div class="divider"></div>
+      <nav class="server-list" aria-label="Your servers">
+        @for (server of servers(); track server.id) { <button class="server-icon" type="button" [class.selected]="selectedServer()?.id === server.id" [title]="server.name" (click)="selectServer(server)">{{ server.name.slice(0, 2).toUpperCase() }}</button> }
+      </nav>
+      <details class="join-server"><summary aria-label="Entrar em um server"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.1.1l2.1-2.1a5 5 0 0 0-7.1-7.1L10.9 5"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2.1 2.1a5 5 0 0 0 7.1 7.1l1.2-1.2"/></svg></summary><form (ngSubmit)="joinInvite()"><h2>Entrar em um server</h2><label>Código do convite<input name="inviteCode" [(ngModel)]="inviteCode" required autocomplete="off"></label><button type="submit" [disabled]="loading()">Entrar</button></form></details>
+      <details class="create-server"><summary aria-label="Create server">+</summary><form (ngSubmit)="createServer()"><h2>Create a server</h2><label>Server name<input name="serverName" [(ngModel)]="serverName" required maxlength="100"></label><label>Description <small>(optional)</small><input name="serverDescription" [(ngModel)]="serverDescription" maxlength="1000"></label><button type="submit" [disabled]="loading()">Create server</button></form></details>
+    </aside>
+
+    <aside class="channel-sidebar">
+      @if (selectedServer(); as server) {
+        <header class="server-header"><div><strong>{{ server.name }}</strong><small>{{ server.membership_role }}</small></div><details class="actions"><summary aria-label="Server actions">•••</summary><div class="popover">@if (server.membership_role === 'owner') { <button class="action-button invite-action" type="button" (click)="createInvite()"><span class="action-icon" aria-hidden="true">+</span><span>Convidar amigos</span></button>@if (createdInvite) { <p class="invite-code">Convite copiado para a área de transferência.</p> }<form class="channel-action" (ngSubmit)="createChannel()"><label>Novo canal de texto<input name="channelName" [(ngModel)]="channelName" required maxlength="100"></label><button type="submit" [disabled]="loading()">Adicionar canal</button></form> }<button class="action-button leave-action" type="button" (click)="requestLeaveServer()" [disabled]="loading()"><svg class="leave-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg><span>Sair do server</span></button></div></details></header>
+        <p class="server-description">{{ server.description || 'A place to talk with your group.' }}</p>
+        <div class="section-title">TEXT CHANNELS</div>
+        <nav class="channel-list" aria-label="Text channels">@for (channel of channels(); track channel.id) { <button type="button" [class.selected]="selectedChannel()?.id === channel.id" (click)="selectChannel(channel)"><span>#</span>{{ channel.name }}</button> } @empty { <p>No channels yet.</p> }</nav>
+      } @else { <section class="sidebar-empty"><div class="empty-icon">⌘</div><h2>Your servers</h2><p>Select a server on the left or create a new one.</p></section> }
+      <footer class="account-bar"><div class="avatar">{{ user()!.username.slice(0, 1).toUpperCase() }}</div><div><strong>{{ user()!.username }}</strong><small>{{ user()!.role }}</small></div><button type="button" title="Log out" (click)="logout()">⇥</button></footer>
+    </aside>
+
+    <section class="conversation-panel">
+      @if (selectedChannel(); as channel) {
+        <header class="conversation-header"><div><span>#</span><h1>{{ channel.name }}</h1></div><span class="connection-status" [class.available]="status() === 'available'">{{ status() }}</span></header>
+        <section class="message-list" aria-live="polite">@for (message of messages(); track message.id) { <article class="message"><div class="message-avatar">{{ message.author_username.slice(0, 1).toUpperCase() }}</div><div><header><strong>{{ message.author_username }}</strong><time [attr.datetime]="message.created_at">{{ message.created_at.slice(11, 16) }}</time></header><p>{{ message.content }}</p></div></article> } @empty { <section class="conversation-empty"><div class="empty-icon">#</div><h2>Welcome to #{{ channel.name }}</h2><p>This is the beginning of the channel. Say hello to your group.</p></section> }</section>
+        <form class="message-composer" (ngSubmit)="sendMessage()"><label class="sr-only" for="message-content">Message</label><textarea id="message-content" name="messageContent" [(ngModel)]="messageContent" required maxlength="4000" rows="1" [placeholder]="'Message #' + channel.name"></textarea><button type="submit" [disabled]="loading() || !messageContent.trim()">Send</button></form>
+      } @else { <section class="workspace-empty"><img class="brand large" src="assets/brigames-station-icon.png" alt=""><h1>Welcome to brigames-station</h1><p>Select a server and channel to begin a conversation.</p></section> }
     </section>
   } @else {
-    <form class="login" (ngSubmit)="login()">
-      <h2>Sign in</h2>
-      <label>Username or email<input name="identity" [(ngModel)]="identity" autocomplete="username" required></label>
-      <label>Password<input name="password" [(ngModel)]="password" type="password" autocomplete="current-password" required></label>
-      <button type="submit" [disabled]="loading()">{{ loading() ? 'Signing in...' : 'Login' }}</button>
-    </form>
+    <section class="login-view"><div class="login-intro"><img class="login-mascot" src="assets/brigames-station-mascot.png" alt="Mascote brigames-station"><p class="login-quote">“Queres ser baitado?” - Britt1n</p><span class="connection-status" [class.available]="status() === 'available'">Backend {{ status() }}</span></div><form class="login-card" (ngSubmit)="login()"><h2>Welcome back</h2><p>Sign in to continue to your servers.</p><label>Username or email<input name="identity" [(ngModel)]="identity" autocomplete="username" required autofocus></label><label>Password<input name="password" [(ngModel)]="password" type="password" autocomplete="current-password" required></label><button type="submit" [disabled]="loading()">{{ loading() ? 'Signing in...' : 'Sign in' }}</button></form></section>
   }
-  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+  @if (leaveConfirmationOpen()) { <section class="modal-backdrop" (click)="cancelLeaveServer()"><section class="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="leave-confirmation-title" (click)="$event.stopPropagation()"><h2 id="leave-confirmation-title">Sair de {{ selectedServer()?.name }}?</h2><p>Você perderá acesso aos canais deste server e precisará de um novo convite para entrar novamente.</p><div class="confirmation-actions"><button type="button" (click)="cancelLeaveServer()">Cancelar</button><button class="confirm-leave" type="button" (click)="confirmLeaveServer()" [disabled]="loading()">Sair do server</button></div></section></section> }
+  @if (error()) { <p class="error-toast" role="alert">{{ error() }}</p> }
 </main>

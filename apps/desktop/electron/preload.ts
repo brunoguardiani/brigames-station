@@ -19,7 +19,7 @@ contextBridge.exposeInMainWorld('desktop', {
     create: (serverID: number, name: string) => ipcRenderer.invoke('channels:create', serverID, name),
   },
   messages: { list: (channelID: number) => ipcRenderer.invoke('messages:list', channelID), create: (channelID: number, content: string) => ipcRenderer.invoke('messages:create', channelID, content) },
-  invites: { create: (serverID: number) => ipcRenderer.invoke('invites:create', serverID), join: (code: string) => ipcRenderer.invoke('invites:join', code) },
+  invites: { create: (serverID: number) => ipcRenderer.invoke('invites:create', serverID), createAndCopy: (serverID: number) => ipcRenderer.invoke('invites:create-and-copy', serverID), join: (code: string) => ipcRenderer.invoke('invites:join', code) },
   realtime: {
     onConnected: (callback: () => void): (() => void) => {
       const listener = () => callback();
