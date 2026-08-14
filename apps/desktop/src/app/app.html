@@ -1,0 +1,14 @@
+<main>
+  <header><h1>brigames-station</h1><p>Backend status: <strong>{{ status() }}</strong></p></header>
+  @if (user()) {
+    <section><h2>Welcome, {{ user()!.username }}</h2><p>{{ user()!.email }} · {{ user()!.role }}</p><button type="button" (click)="logout()">Logout</button></section>
+  } @else {
+    <form (ngSubmit)="login()">
+      <h2>Sign in</h2>
+      <label>Username or email<input name="identity" [(ngModel)]="identity" autocomplete="username" required></label>
+      <label>Password<input name="password" [(ngModel)]="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit" [disabled]="loading()">{{ loading() ? 'Signing in…' : 'Login' }}</button>
+      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    </form>
+  }
+</main>

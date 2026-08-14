@@ -1,7 +1,32 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, safeStorage } from 'electron';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-const backendHealthURL = 'http://127.0.0.1:8080/health';
+const backendURL = process.env['DESKTOP_BACKEND_URL'] ?? 'http://127.0.0.1:8080';
+const backendHealthURL = backendURL + '/health';
+let accessToken: string | undefined;
+
+type User = { username: string; email: string; role: string };
+type Tokens = { access_token: string; refresh_token: string };
+
+function refreshTokenPath(): string { return path.join(app.getPath('userData'), 'refresh-token.bin'); }
+async function saveRefreshToken(token: string): Promise<void> {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure operating-system storage is unavailable.');
+  await fs.writeFile(refreshTokenPath(), safeStorage.encryptString(token));
+}
+async function loadRefreshToken(): Promise<string | null> {
+  try { return safeStorage.decryptString(await fs.readFile(refreshTokenPath())); } catch { return null; }
+}
+async function authenticate(pathname: string, body: Record<string, string>): Promise<User> {
+  const response = await fetch(backendURL + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!response.ok) throw new Error('Authentication failed.');
+  const tokens = await response.json() as Tokens;
+  const userResponse = await fetch(backendURL + '/me', { headers: { Authorization: 'Bearer ' + tokens.access_token } });
+  if (!userResponse.ok) throw new Error('Session is invalid.');
+  accessToken = tokens.access_token;
+  await saveRefreshToken(tokens.refresh_token);
+  return await userResponse.json() as User;
+}
 
 function isBackendHealth(value: unknown): value is { status: 'alive' } {
   return typeof value === 'object' && value !== null && (value as { status?: unknown }).status === 'alive';
@@ -42,6 +67,22 @@ ipcMain.handle('backend:get-health', async (): Promise<{ status: 'alive' }> => {
   }
 
   return body;
+});
+
+ipcMain.handle('auth:login', async (_event, identity: unknown, password: unknown): Promise<User> => {
+  if (typeof identity !== 'string' || typeof password !== 'string') throw new Error('Invalid login input.');
+  return authenticate('/auth/login', { identity, password });
+});
+ipcMain.handle('auth:current-session', async (): Promise<User | null> => {
+  const refreshToken = await loadRefreshToken();
+  if (!refreshToken) return null;
+  try { return await authenticate('/auth/refresh', { refresh_token: refreshToken }); } catch { accessToken = undefined; await fs.rm(refreshTokenPath(), { force: true }); return null; }
+});
+ipcMain.handle('auth:logout', async (): Promise<void> => {
+  const refreshToken = await loadRefreshToken();
+  if (refreshToken) await fetch(backendURL + '/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: refreshToken }) }).catch(() => undefined);
+  accessToken = undefined;
+  await fs.rm(refreshTokenPath(), { force: true });
 });
 
 app

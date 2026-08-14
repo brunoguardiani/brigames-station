@@ -18,3 +18,4 @@ minimumReleaseAgeExclude:
   - '@angular/cli@22.1.4'
   - '@angular/compiler-cli@22.1.2'
   - '@schematics/angular@22.1.4'
+  - '@angular/forms@22.1.2'

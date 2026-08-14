@@ -10,14 +10,14 @@ var (
 )
 
 type User struct {
-	ID       int64
-	Username string
-	Email    string
-	Role     string
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Role     string `json:"role"`
 }
 
 type Tokens struct {
-	AccessToken  string
-	RefreshToken string
-	ExpiresIn    int64
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
 }

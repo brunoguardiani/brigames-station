@@ -1,0 +1,4 @@
+main { max-width: 28rem; margin: 0 auto; padding: 2rem; font-family: system-ui, sans-serif; }
+header { margin-bottom: 2rem; } strong { text-transform: capitalize; }
+label { display: block; margin: 1rem 0; } input { box-sizing: border-box; display: block; width: 100%; margin-top: .35rem; padding: .6rem; }
+button { padding: .6rem 1rem; } .error { color: #b00020; }
