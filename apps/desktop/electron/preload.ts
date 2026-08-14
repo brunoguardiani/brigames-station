@@ -20,4 +20,16 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   messages: { list: (channelID: number) => ipcRenderer.invoke('messages:list', channelID), create: (channelID: number, content: string) => ipcRenderer.invoke('messages:create', channelID, content) },
   invites: { create: (serverID: number) => ipcRenderer.invoke('invites:create', serverID), join: (code: string) => ipcRenderer.invoke('invites:join', code) },
+  realtime: {
+    onConnected: (callback: () => void): (() => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('realtime:connected', listener);
+      return () => ipcRenderer.removeListener('realtime:connected', listener);
+    },
+    onMessageCreated: (callback: (message: unknown) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, message: unknown) => callback(message);
+      ipcRenderer.on('realtime:message-created', listener);
+      return () => ipcRenderer.removeListener('realtime:message-created', listener);
+    },
+  },
 });

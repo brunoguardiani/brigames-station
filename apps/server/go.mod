@@ -3,6 +3,7 @@ module brigames-station
 go 1.26.0
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/gin-gonic/gin v1.12.0
 	github.com/jackc/pgx/v5 v5.8.0
 	golang.org/x/crypto v0.48.0

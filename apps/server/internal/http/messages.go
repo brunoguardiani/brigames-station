@@ -3,13 +3,14 @@ package httpserver
 import (
 	"brigames-station/internal/auth"
 	"brigames-station/internal/messages"
+	"brigames-station/internal/realtime"
 	"errors"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"strconv"
 )
 
-func registerMessageRoutes(router *gin.Engine, service *messages.Service, tokens *auth.TokenManager) {
+func registerMessageRoutes(router *gin.Engine, service *messages.Service, tokens *auth.TokenManager, hub *realtime.Hub) {
 	r := router.Group("/channels")
 	r.Use(requireJWT(tokens))
 	r.GET("/:channelId/messages", func(c *gin.Context) {
@@ -50,6 +51,11 @@ func registerMessageRoutes(router *gin.Engine, service *messages.Service, tokens
 		if e != nil {
 			messageError(c, e)
 			return
+		}
+		if hub != nil {
+			if memberIDs, e := service.MemberIDs(c.Request.Context(), id); e == nil {
+				hub.Publish(memberIDs, realtime.Event{Type: "message.created", Data: item})
+			}
 		}
 		c.JSON(http.StatusCreated, item)
 	})

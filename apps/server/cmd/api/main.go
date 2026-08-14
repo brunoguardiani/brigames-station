@@ -17,6 +17,7 @@ import (
 	"brigames-station/internal/identity"
 	"brigames-station/internal/invites"
 	"brigames-station/internal/messages"
+	"brigames-station/internal/realtime"
 	"brigames-station/internal/servers"
 )
 
@@ -45,10 +46,11 @@ func main() {
 	serverService := servers.New(pool)
 	messageService := messages.New(pool)
 	inviteService := invites.New(pool)
+	hub := realtime.NewHub()
 
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,
-		Handler: httpserver.NewHandler(pool, identityService, tokenManager, serverService, messageService, inviteService),
+		Handler: httpserver.NewHandler(pool, identityService, tokenManager, serverService, messageService, inviteService, hub),
 	}
 
 	go func() {

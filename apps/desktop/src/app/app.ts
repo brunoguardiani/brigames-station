@@ -19,9 +19,27 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly loading = signal(false);
   protected identity = ''; protected password = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = ''; protected messageContent = ''; protected inviteCode = ''; protected createdInvite = '';
   private healthCheckTimer?: ReturnType<typeof setInterval>;
+  private removeRealtimeConnectedListener?: () => void;
+  private removeRealtimeMessageListener?: () => void;
 
-  ngOnInit(): void { void this.refreshBackendStatus(); void this.restoreSession(); this.healthCheckTimer = setInterval(() => void this.refreshBackendStatus(), 5_000); }
-  ngOnDestroy(): void { if (this.healthCheckTimer) clearInterval(this.healthCheckTimer); }
+  ngOnInit(): void {
+    void this.refreshBackendStatus();
+    void this.restoreSession();
+    this.healthCheckTimer = setInterval(() => void this.refreshBackendStatus(), 5_000);
+    this.removeRealtimeConnectedListener = window.desktop.realtime.onConnected(() => {
+      const channel = this.selectedChannel();
+      if (channel) void this.selectChannel(channel);
+    });
+    this.removeRealtimeMessageListener = window.desktop.realtime.onMessageCreated((message) => {
+      if (this.selectedChannel()?.id !== message.channel_id) return;
+      this.messages.update((items) => items.some((item) => item.id === message.id) ? items : [...items, message]);
+    });
+  }
+  ngOnDestroy(): void {
+    if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
+    this.removeRealtimeConnectedListener?.();
+    this.removeRealtimeMessageListener?.();
+  }
   protected async login(): Promise<void> {
     this.loading.set(true); this.error.set('');
     try { this.user.set(await window.desktop.auth.login(this.identity, this.password)); this.password = ''; await this.loadServers(); }

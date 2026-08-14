@@ -46,6 +46,29 @@ func (s *Service) Create(ctx context.Context, userID, channelID int64, content s
 	}
 	return item, nil
 }
+
+// MemberIDs returns the users currently authorized to receive events from a channel.
+func (s *Service) MemberIDs(ctx context.Context, channelID int64) ([]int64, error) {
+	rows, err := s.pool.Query(ctx, "SELECT server_memberships.user_id FROM channels JOIN server_memberships ON server_memberships.server_id = channels.server_id WHERE channels.id = $1", channelID)
+	if err != nil {
+		return nil, fmt.Errorf("list channel members: %w", err)
+	}
+	defer rows.Close()
+
+	userIDs := make([]int64, 0)
+	for rows.Next() {
+		var userID int64
+		if err := rows.Scan(&userID); err != nil {
+			return nil, fmt.Errorf("scan channel member: %w", err)
+		}
+		userIDs = append(userIDs, userID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate channel members: %w", err)
+	}
+	return userIDs, nil
+}
+
 func (s *Service) List(ctx context.Context, userID, channelID, before int64, limit int) (Page, error) {
 	if limit <= 0 {
 		limit = 50

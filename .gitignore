@@ -21,6 +21,7 @@ pnpm-debug.log*
 # Electron packaging and local runtime data
 release/
 *.asar
+apps/desktop/.electron-user-*/
 
 # Go
 bin/

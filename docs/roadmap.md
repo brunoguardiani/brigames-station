@@ -205,5 +205,30 @@ scope is documented in [`phase-3-messages.md`](./phase-3-messages.md).
 
 ## Phase 4 — Temporary Server Invites
 
-Phase 4 adds private, shared invite codes that expire after 24 hours. Its scope
-is documented in [`phase-4-invites.md`](./phase-4-invites.md).
+Phase 4 is complete. It adds private, shared invite codes that expire after 24
+hours. Its scope is documented in [`phase-4-invites.md`](./phase-4-invites.md).
+
+### Delivered Scope
+
+- [x] Add versioned persistence for hashed, 24-hour server invite codes.
+- [x] Allow server owners to create and revoke invites.
+- [x] Allow authenticated users to join a server as a member through a valid
+  invite, idempotently.
+- [x] Extend the desktop application with invite creation and join flows.
+
+## Phase 5 - Realtime Text Delivery
+
+Phase 5 is complete. It adds authenticated WebSocket delivery for newly
+created text messages. Its scope is documented in
+[`phase-5-realtime-messages.md`](./phase-5-realtime-messages.md).
+
+### Delivered Scope
+
+- [x] Add an authenticated WebSocket endpoint with bounded initial payload.
+- [x] Publish `message.created` only to the current members of the channel's
+  server.
+- [x] Keep the WebSocket hub in the Go process; Redis and multi-instance
+  fan-out remain out of scope.
+- [x] Keep tokens and the WebSocket client in the Electron main process.
+- [x] Add typed, minimal IPC events to Angular and reconnect with bounded exponential backoff.
+- [x] Verify delivery of `message.created` between two authenticated clients.

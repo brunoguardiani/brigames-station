@@ -23,6 +23,10 @@ interface Window {
     };
     messages: { list(channelID: number): Promise<MessagePage>; create(channelID: number, content: string): Promise<Message>; };
     invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
+    realtime: {
+      onConnected(callback: () => void): () => void;
+      onMessageCreated(callback: (message: Message) => void): () => void;
+    };
   };
 }
 

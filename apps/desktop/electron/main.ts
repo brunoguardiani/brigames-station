@@ -5,6 +5,9 @@ import path from 'node:path';
 const backendURL = process.env['DESKTOP_BACKEND_URL'] ?? 'http://127.0.0.1:8080';
 const backendHealthURL = backendURL + '/health';
 let accessToken: string | undefined;
+let realtimeSocket: WebSocket | undefined;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let reconnectDelayMilliseconds = 1_000;
 
 type User = { username: string; email: string; role: string };
 type Tokens = { access_token: string; refresh_token: string };
@@ -12,6 +15,57 @@ type Server = { id: number; name: string; description: string; created_by: numbe
 type Channel = { id: number; server_id: number; name: string; type: 'text'; position: number; created_by: number; created_at: string };
 type Message = { id: number; channel_id: number; author_id: number; content: string; created_at: string };
 type MessagePage = { messages: Message[]; next_before: number | null };
+
+function realtimeURL(): string {
+  return backendURL.replace(/^http/, 'ws') + '/ws';
+}
+function sendToRenderers(channel: string, payload?: unknown): void {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload);
+}
+function disconnectRealtime(): void {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = undefined;
+  reconnectDelayMilliseconds = 1_000;
+  const socket = realtimeSocket;
+  realtimeSocket = undefined;
+  socket?.close();
+}
+function scheduleRealtimeReconnect(): void {
+  if (!accessToken || reconnectTimer) return;
+  const delay = reconnectDelayMilliseconds;
+  reconnectDelayMilliseconds = Math.min(reconnectDelayMilliseconds * 2, 30_000);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined;
+    connectRealtime();
+  }, delay);
+}
+function connectRealtime(): void {
+  if (!accessToken || realtimeSocket) return;
+  const socket = new WebSocket(realtimeURL());
+  realtimeSocket = socket;
+  socket.addEventListener('open', () => {
+    if (realtimeSocket === socket && accessToken) socket.send(JSON.stringify({ type: 'authenticate', access_token: accessToken }));
+  });
+  socket.addEventListener('message', (event) => {
+    if (realtimeSocket !== socket || typeof event.data !== 'string') return;
+    try {
+      const message = JSON.parse(event.data) as { type?: string; data?: Message };
+      if (message.type === 'authenticated') {
+        reconnectDelayMilliseconds = 1_000;
+        sendToRenderers('realtime:connected');
+      } else if (message.type === 'message.created' && message.data) {
+        sendToRenderers('realtime:message-created', message.data);
+      }
+    } catch { /* Ignore invalid realtime payloads. */ }
+  });
+  socket.addEventListener('error', () => socket.close());
+  socket.addEventListener('close', () => {
+    if (realtimeSocket === socket) {
+      realtimeSocket = undefined;
+      scheduleRealtimeReconnect();
+    }
+  });
+}
 
 function refreshTokenPath(): string { return path.join(app.getPath('userData'), 'refresh-token.bin'); }
 async function saveRefreshToken(token: string): Promise<void> {
@@ -27,9 +81,10 @@ async function authenticate(pathname: string, body: Record<string, string>): Pro
   const tokens = await response.json() as Tokens;
   const userResponse = await fetch(backendURL + '/me', { headers: { Authorization: 'Bearer ' + tokens.access_token } });
   if (!userResponse.ok) throw new Error('Session is invalid.');
-  accessToken = tokens.access_token;
-  await saveRefreshToken(tokens.refresh_token);
-  return await userResponse.json() as User;
+	accessToken = tokens.access_token;
+	await saveRefreshToken(tokens.refresh_token);
+	connectRealtime();
+	return await userResponse.json() as User;
 }
 async function authenticatedRequest<T>(pathname: string, method = 'GET', body?: Record<string, string>): Promise<T> {
   if (!accessToken) throw new Error('No active session.');
@@ -93,11 +148,12 @@ ipcMain.handle('auth:login', async (_event, identity: unknown, password: unknown
 ipcMain.handle('auth:current-session', async (): Promise<User | null> => {
   const refreshToken = await loadRefreshToken();
   if (!refreshToken) return null;
-  try { return await authenticate('/auth/refresh', { refresh_token: refreshToken }); } catch { accessToken = undefined; await fs.rm(refreshTokenPath(), { force: true }); return null; }
+  try { return await authenticate('/auth/refresh', { refresh_token: refreshToken }); } catch { disconnectRealtime(); accessToken = undefined; await fs.rm(refreshTokenPath(), { force: true }); return null; }
 });
 ipcMain.handle('auth:logout', async (): Promise<void> => {
   const refreshToken = await loadRefreshToken();
   if (refreshToken) await fetch(backendURL + '/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: refreshToken }) }).catch(() => undefined);
+  disconnectRealtime();
   accessToken = undefined;
   await fs.rm(refreshTokenPath(), { force: true });
 });

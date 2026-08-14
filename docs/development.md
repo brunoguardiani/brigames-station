@@ -21,6 +21,9 @@ brigames-station/
 |     |  |- auth/         # Password hashing and JWT/refresh-token support
 |     |  |- identity/     # Accounts and sessions
 |     |  |- servers/      # Servers, memberships, channels, authorization
+|     |  |- messages/     # Persistent channel messages
+|     |  |- invites/      # Temporary server invitations
+|     |  `- realtime/     # In-process WebSocket event hub
 |     |  |- http/         # Gin routing and handlers
 |     |  `- migrations/   # Migration runner
 |     `- migrations/      # Ordered SQL and reverse SQL migrations
@@ -55,8 +58,18 @@ Node APIs.
   load `.env` files automatically.
 - PostgreSQL uses Docker Compose and a persistent local volume.
 
+## Remote Environment Baseline
+
+Production uses a remote VPS with a TLS reverse proxy in front of the Go API.
+Desktop configuration uses the remote HTTPS API URL; the application derives
+the WSS URL from it. Local development may continue to use
+`http://127.0.0.1`. Do not expose PostgreSQL directly to the internet.
+Configure production secrets outside source control, enable backups, and
+restrict WebSocket origins.
+
 ## Current Phase Boundaries
 
-Phase 2 provides authenticated servers, memberships, and text channels. It
-does not provide messages, invitations, server deletion, WebSocket, presence,
-notifications, LiveKit, WebRTC, or other media features.
+Phase 5 provides HTTP messages, temporary server invites, and realtime
+delivery of newly created messages. It does not provide presence, typing
+indicators, notifications, server deletion, LiveKit, WebRTC, or other media
+features.
