@@ -1,0 +1,78 @@
+openapi: 3.1.0
+info:
+  title: brigames-station API
+  version: 0.0.0
+  description: HTTP contract for the brigames-station control plane.
+servers:
+  - url: /
+    description: API base path
+paths:
+  /health:
+    get:
+      summary: Check backend liveness
+      description: Confirms that the HTTP backend process is alive. This endpoint does not depend on PostgreSQL.
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Backend process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LivenessStatus'
+        '500':
+          description: Unexpected backend failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorStatus'
+  /ready:
+    get:
+      summary: Check backend readiness
+      description: Confirms that the backend can reach PostgreSQL and is ready to serve requests.
+      operationId: getReadiness
+      security: []
+      responses:
+        '200':
+          description: Backend is ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+        '503':
+          description: Backend is not ready because PostgreSQL is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+components:
+  schemas:
+    LivenessStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          const: alive
+          example: alive
+    ReadinessStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+            - not_ready
+          example: ready
+    ErrorStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          const: error
+          example: error
