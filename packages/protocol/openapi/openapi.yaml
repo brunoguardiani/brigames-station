@@ -198,11 +198,21 @@ components:
       type: object
       required:
         - status
+        - code
+        - message
       properties:
         status:
           type: string
           const: error
           example: error
+        code:
+          type: string
+          description: Stable, program-readable error code.
+          example: validation_error
+        message:
+          type: string
+          description: Safe, user-readable error explanation.
+          example: Password must contain at least 12 characters.
     RegisterRequest:
       type: object
       required: [username, email, password]

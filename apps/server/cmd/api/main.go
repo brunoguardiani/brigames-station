@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"brigames-station/internal/auth"
 	"brigames-station/internal/config"
 	"brigames-station/internal/database"
 	httpserver "brigames-station/internal/http"
+	"brigames-station/internal/identity"
 )
 
 func main() {
@@ -31,9 +33,16 @@ func main() {
 	}
 	defer pool.Close()
 
+	tokenManager, err := auth.NewTokenManager(cfg.Auth.JWTSecret, cfg.Auth.JWTIssuer, cfg.Auth.JWTAudience, cfg.Auth.AccessTokenTTL)
+	if err != nil {
+		logger.Error("create token manager", "error", err)
+		os.Exit(1)
+	}
+	identityService := identity.New(pool, tokenManager, cfg.Auth.RegistrationEnabled, cfg.Auth.RefreshTokenTTL)
+
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,
-		Handler: httpserver.NewHandler(pool),
+		Handler: httpserver.NewHandler(pool, identityService, tokenManager),
 	}
 
 	go func() {

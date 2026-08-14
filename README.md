@@ -6,9 +6,9 @@ TypeScript, Go, PostgreSQL, and OpenAPI HTTP contracts.
 
 ## Repository foundation
 
-The repository includes a Go health service, local PostgreSQL Compose
-configuration, versioned SQL migration infrastructure, and an Angular/Electron
-desktop health-status screen. Authentication, realtime features, and business
+The repository includes a Go API, local PostgreSQL Compose configuration,
+versioned SQL migrations, authentication endpoints, and an Angular/Electron
+desktop health-status screen. Realtime features and the remaining business
 domains are not implemented yet.
 
 ```text
@@ -85,6 +85,16 @@ pnpm install
    Invoke-WebRequest http://localhost:8080/health
    Invoke-WebRequest http://localhost:8080/ready
    ```
+
+## Test authentication with Postman
+
+Import `packages/protocol/postman/brigames-station.postman_collection.json`
+into Postman. The collection uses `http://127.0.0.1:8080` by default.
+
+For a member registration test, set `AUTH_REGISTRATION_ENABLED=true` in the
+local `.env` and restart the API. Run Register, Login, Me, Refresh, and Logout
+in that order. Login stores the tokens as Postman collection variables. Return
+the registration flag to `false` after testing.
 
 ## Run the desktop application
 

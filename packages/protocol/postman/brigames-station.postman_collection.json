@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "brigames-station API",
-    "description": "Manual API checks. Authentication requests require the Phase 1 backend implementation.",
+    "description": "Manual checks for operational and Phase 1 identity endpoints.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
