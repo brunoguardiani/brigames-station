@@ -120,6 +120,8 @@ ipcMain.handle('servers:leave', (_event, serverID: unknown): Promise<void> => {
 });
 ipcMain.handle('messages:list', (_event, channelID: unknown): Promise<MessagePage> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0) throw new Error('Invalid channel ID.'); return authenticatedRequest<MessagePage>('/channels/' + channelID + '/messages'); });
 ipcMain.handle('messages:create', (_event, channelID: unknown, content: unknown): Promise<Message> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0 || typeof content !== 'string') throw new Error('Invalid message input.'); return authenticatedRequest<Message>('/channels/' + channelID + '/messages', 'POST', { content }); });
+ipcMain.handle('invites:create', (_event, serverID: unknown): Promise<{ code: string; expires_at: string }> => { if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.'); return authenticatedRequest('/servers/' + serverID + '/invites', 'POST'); });
+ipcMain.handle('invites:join', (_event, code: unknown): Promise<{ server_id: number }> => { if (typeof code !== 'string' || !code) throw new Error('Invalid invite code.'); return authenticatedRequest('/invites/' + encodeURIComponent(code) + '/join', 'POST'); });
 
 app
   .whenReady()

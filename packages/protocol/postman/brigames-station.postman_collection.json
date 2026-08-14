@@ -15,7 +15,8 @@
     { "key": "serverName", "value": "My test server" },
     { "key": "channelName", "value": "planning" },
     { "key": "channelId", "value": "" },
-    { "key": "messageContent", "value": "Hello from Postman" }
+    { "key": "messageContent", "value": "Hello from Postman" },
+    { "key": "inviteCode", "value": "" }
   ],
   "item": [
     {
@@ -90,6 +91,13 @@
       "item": [
         { "name": "Create Message", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"content\": \"{{messageContent}}\"\n}" }, "url": "{{baseUrl}}/channels/{{channelId}}/messages" } },
         { "name": "List Messages", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/channels/{{channelId}}/messages" } }
+      ]
+    },
+    {
+      "name": "Invites (Phase 4)",
+      "item": [
+        { "name": "Create Invite", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/servers/{{serverId}}/invites" }, "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('inviteCode', pm.response.json().code);"] } }] },
+        { "name": "Join Invite", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/invites/{{inviteCode}}/join" } }
       ]
     }
   ]

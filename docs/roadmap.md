@@ -202,3 +202,8 @@ scope is documented in [`phase-3-messages.md`](./phase-3-messages.md).
 - [x] Add message contracts, migration, membership authorization, and tests.
 - [x] Add HTTP list/create operations and Postman coverage.
 - [x] Extend Electron and Angular to display and send channel messages.
+
+## Phase 4 — Temporary Server Invites
+
+Phase 4 adds private, shared invite codes that expire after 24 hours. Its scope
+is documented in [`phase-4-invites.md`](./phase-4-invites.md).

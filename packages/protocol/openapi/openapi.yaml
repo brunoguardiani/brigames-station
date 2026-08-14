@@ -265,6 +265,42 @@ paths:
           $ref: '#/components/responses/ServerNotFound'
         '409':
           $ref: '#/components/responses/LastOwnerConflict'
+  /servers/{serverId}/invites:
+    parameters: [{ $ref: '#/components/parameters/ServerID' }]
+    post:
+      summary: Create a 24-hour server invite
+      operationId: createServerInvite
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Invite created., content: { application/json: { schema: { $ref: '#/components/schemas/Invite' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /servers/{serverId}/invites/{inviteId}/revoke:
+    parameters:
+      - { $ref: '#/components/parameters/ServerID' }
+      - name: inviteId
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    post:
+      summary: Revoke a server invite
+      operationId: revokeServerInvite
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Invite revoked. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ServerNotFound' }
+  /invites/{code}/join:
+    post:
+      summary: Join a server with an active invite
+      operationId: joinServerInvite
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: code, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Joined server. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/ServerNotFound' }
   /channels/{channelId}/messages:
     parameters:
       - $ref: '#/components/parameters/ChannelID'
@@ -520,6 +556,14 @@ components:
         created_at:
           type: string
           format: date-time
+    Invite:
+      type: object
+      required: [id, server_id, code, expires_at]
+      properties:
+        id: { type: integer, format: int64 }
+        server_id: { type: integer, format: int64 }
+        code: { type: string }
+        expires_at: { type: string, format: date-time }
     CreateMessageRequest:
       type: object
       required: [content]

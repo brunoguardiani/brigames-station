@@ -22,6 +22,7 @@ interface Window {
       create(serverID: number, name: string): Promise<Channel>;
     };
     messages: { list(channelID: number): Promise<MessagePage>; create(channelID: number, content: string): Promise<Message>; };
+    invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
   };
 }
 
