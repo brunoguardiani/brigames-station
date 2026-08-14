@@ -6,21 +6,24 @@ TypeScript, Go, PostgreSQL, and OpenAPI HTTP contracts.
 
 ## Repository foundation
 
-The repository includes a Go health service and local PostgreSQL Compose
-configuration. It does not yet contain an Angular application, Electron
-runtime, migrations, authentication, realtime features, or business domains.
+The repository includes a Go health service, local PostgreSQL Compose
+configuration, versioned SQL migration infrastructure, and an Angular/Electron
+desktop health-status screen. Authentication, realtime features, and business
+domains are not implemented yet.
 
 ```text
-apps/desktop/       Desktop application skeleton
-apps/server/        Go backend skeleton
-packages/protocol/  Future OpenAPI HTTP contracts
-infra/              Future local infrastructure configuration
+apps/desktop/       Angular renderer and Electron shell
+apps/server/        Go backend and migration command
+packages/protocol/  OpenAPI HTTP contracts
+infra/              Local infrastructure structure
 ```
 
 ## Prerequisites
 
 - Node.js with Corepack enabled
 - pnpm
+- Go
+- Docker Desktop
 
 ## Initialize the workspace
 
@@ -29,8 +32,7 @@ corepack enable
 pnpm install
 ```
 
-`pnpm install` currently installs no application dependencies. The remaining
-Phase 0 steps will add the approved Angular and Electron implementation pieces.
+`pnpm install` installs the workspace dependencies for Angular and Electron.
 
 ## Run the health service locally
 
@@ -98,3 +100,9 @@ pnpm --filter @brigames-station/desktop run electron
 
 The Electron renderer has no Node integration. It obtains the backend health
 status through the limited preload API exposed as `window.desktop.backend`.
+
+## Verify Phase 0
+
+With PostgreSQL and the backend running, `/health` and `/ready` must both
+return `200`. The desktop must show `available`. Stop the backend process and,
+within five seconds, the desktop must change to `unavailable`.

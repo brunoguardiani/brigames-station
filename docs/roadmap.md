@@ -74,8 +74,8 @@ end-to-end path from the desktop application to the Go backend and PostgreSQL.
 
 #### Verification
 
-- [ ] Document local startup and verification steps.
-- [ ] Validate the complete desktop-to-backend-to-PostgreSQL path.
+- [x] Document local startup and verification steps.
+- [x] Validate the complete desktop-to-backend-to-PostgreSQL path.
 
 ### Required Implementation Order
 

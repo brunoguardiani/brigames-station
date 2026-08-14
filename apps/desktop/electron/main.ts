@@ -29,7 +29,9 @@ async function createWindow(): Promise<void> {
 }
 
 ipcMain.handle('backend:get-health', async (): Promise<{ status: 'alive' }> => {
-  const response = await fetch(backendHealthURL);
+  const response = await fetch(`${backendHealthURL}?timestamp=${Date.now()}`, {
+    cache: 'no-store',
+  });
   if (!response.ok) {
     throw new Error(`Backend health check failed with status ${response.status}`);
   }
