@@ -45,8 +45,25 @@ Phase 0 steps will add the approved Angular and Electron implementation pieces.
 3. Start the Go backend:
 
    ```powershell
+   Get-Content .env | ForEach-Object {
+     if ($_ -match '^\s*([^#=]+)=(.*)$') {
+       Set-Item -Path "Env:$($matches[1].Trim())" -Value $matches[2].Trim()
+     }
+   }
    Set-Location apps/server
    go run ./cmd/api
+   ```
+
+   Run the environment-loading snippet in each terminal that starts a Go
+   command. The backend reads operating-system environment variables and does
+   not load `.env` files by itself.
+
+   Migrations are always explicit and are not run by the API. Run them in a
+   separate terminal when versioned SQL files are available:
+
+   ```powershell
+   Set-Location apps/server
+   go run ./cmd/migrate
    ```
 
 4. In another terminal, verify the endpoints:
@@ -55,3 +72,29 @@ Phase 0 steps will add the approved Angular and Electron implementation pieces.
    Invoke-WebRequest http://localhost:8080/health
    Invoke-WebRequest http://localhost:8080/ready
    ```
+
+## Run the desktop application
+
+With the backend running, build and open the Electron application:
+
+```powershell
+pnpm --filter @brigames-station/desktop run build
+pnpm --filter @brigames-station/desktop run electron
+```
+
+For Angular development with live reload, use two terminals. Start the Angular
+development server in the first:
+
+```powershell
+pnpm --filter @brigames-station/desktop run serve
+```
+
+Then start Electron in the second terminal:
+
+```powershell
+$env:ELECTRON_RENDERER_URL = "http://127.0.0.1:4200"
+pnpm --filter @brigames-station/desktop run electron
+```
+
+The Electron renderer has no Node integration. It obtains the backend health
+status through the limited preload API exposed as `window.desktop.backend`.

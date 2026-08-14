@@ -50,7 +50,7 @@ end-to-end path from the desktop application to the Go backend and PostgreSQL.
 - [x] Create Docker Compose configuration for PostgreSQL.
 - [x] Configure persistent local database storage.
 - [x] Configure environment variables for local PostgreSQL access.
-- [ ] Initialize versioned SQL migration infrastructure.
+- [x] Initialize versioned SQL migration infrastructure.
 - [x] Configure `pgx` database connectivity in the backend.
 
 #### Backend
@@ -65,12 +65,12 @@ end-to-end path from the desktop application to the Go backend and PostgreSQL.
 
 #### Desktop
 
-- [ ] Initialize the Angular application.
-- [ ] Initialize Electron and integrate it with Angular development and build.
-- [ ] Create the initial application window.
-- [ ] Establish the secure preload boundary.
-- [ ] Query the backend operational endpoint from the desktop application.
-- [ ] Display loading, available, and unavailable backend states.
+- [x] Initialize the Angular application.
+- [x] Initialize Electron and integrate it with Angular development and build.
+- [x] Create the initial application window.
+- [x] Establish the secure preload boundary.
+- [x] Query the backend operational endpoint from the desktop application.
+- [x] Display loading, available, and unavailable backend states.
 
 #### Verification
 

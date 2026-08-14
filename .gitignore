@@ -10,6 +10,7 @@ node_modules/
 .angular/
 dist/
 out/
+dist-electron/
 coverage/
 *.tsbuildinfo
 npm-debug.log*
