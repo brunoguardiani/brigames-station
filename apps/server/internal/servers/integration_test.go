@@ -95,7 +95,7 @@ func TestServerAndChannelLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := httpserver.NewHandler(pool, identities, tokens, service)
+	router := httpserver.NewHandler(pool, identities, tokens, service, nil)
 	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/servers/%d/channels", server.ID), nil)
 	request.Header.Set("Authorization", "Bearer "+accessToken)
 	recorder := httptest.NewRecorder()

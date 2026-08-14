@@ -265,6 +265,32 @@ paths:
           $ref: '#/components/responses/ServerNotFound'
         '409':
           $ref: '#/components/responses/LastOwnerConflict'
+  /channels/{channelId}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ChannelID'
+    get:
+      summary: List text messages
+      operationId: listMessages
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: before, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200': { description: Messages newest first., content: { application/json: { schema: { $ref: '#/components/schemas/MessagePage' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/ChannelNotFound' }
+    post:
+      summary: Create a text message
+      operationId: createMessage
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateMessageRequest' } } }
+      responses:
+        '201': { description: Message created., content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/ChannelNotFound' }
 components:
   securitySchemes:
     bearerAuth:
@@ -314,6 +340,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorStatus'
+    ChannelNotFound:
+      description: The channel does not exist or is not visible to the authenticated user.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorStatus'
   parameters:
     ServerID:
       name: serverId
@@ -323,6 +355,11 @@ components:
         type: integer
         format: int64
         minimum: 1
+    ChannelID:
+      name: channelId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
   schemas:
     LivenessStatus:
       type: object
@@ -483,3 +520,23 @@ components:
         created_at:
           type: string
           format: date-time
+    CreateMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1, maxLength: 4000 }
+    Message:
+      type: object
+      required: [id, channel_id, author_id, content, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        channel_id: { type: integer, format: int64 }
+        author_id: { type: integer, format: int64 }
+        content: { type: string }
+        created_at: { type: string, format: date-time }
+    MessagePage:
+      type: object
+      required: [messages]
+      properties:
+        messages: { type: array, items: { $ref: '#/components/schemas/Message' } }
+        next_before: { type: integer, format: int64, nullable: true }

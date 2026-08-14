@@ -1,0 +1,85 @@
+package messages
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+var (
+	ErrNotFound   = errors.New("channel not found")
+	ErrValidation = errors.New("invalid message")
+)
+
+type Message struct {
+	ID        int64     `json:"id"`
+	ChannelID int64     `json:"channel_id"`
+	AuthorID  int64     `json:"author_id"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+}
+type Page struct {
+	Messages   []Message `json:"messages"`
+	NextBefore *int64    `json:"next_before"`
+}
+type Service struct{ pool *pgxpool.Pool }
+
+func New(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
+
+func (s *Service) Create(ctx context.Context, userID, channelID int64, content string) (Message, error) {
+	content = strings.TrimSpace(content)
+	if len(content) == 0 || len(content) > 4000 {
+		return Message{}, fmt.Errorf("%w: content must contain 1 to 4000 characters", ErrValidation)
+	}
+	var item Message
+	err := s.pool.QueryRow(ctx, "INSERT INTO messages (channel_id, author_id, content) SELECT channels.id, $2, $3 FROM channels JOIN server_memberships ON server_memberships.server_id = channels.server_id WHERE channels.id = $1 AND server_memberships.user_id = $2 RETURNING id, channel_id, author_id, content, created_at", channelID, userID, content).Scan(&item.ID, &item.ChannelID, &item.AuthorID, &item.Content, &item.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Message{}, ErrNotFound
+	}
+	if err != nil {
+		return Message{}, fmt.Errorf("create message: %w", err)
+	}
+	return item, nil
+}
+func (s *Service) List(ctx context.Context, userID, channelID, before int64, limit int) (Page, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		return Page{}, fmt.Errorf("%w: limit must be between 1 and 100", ErrValidation)
+	}
+	var allowed bool
+	err := s.pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM channels JOIN server_memberships ON server_memberships.server_id = channels.server_id WHERE channels.id = $1 AND server_memberships.user_id = $2)", channelID, userID).Scan(&allowed)
+	if err != nil {
+		return Page{}, fmt.Errorf("check channel access: %w", err)
+	}
+	if !allowed {
+		return Page{}, ErrNotFound
+	}
+	rows, err := s.pool.Query(ctx, "SELECT id, channel_id, author_id, content, created_at FROM messages WHERE channel_id = $1 AND ($2 = 0 OR id < $2) ORDER BY id DESC LIMIT $3", channelID, before, limit)
+	if err != nil {
+		return Page{}, fmt.Errorf("list messages: %w", err)
+	}
+	defer rows.Close()
+	page := Page{Messages: make([]Message, 0)}
+	for rows.Next() {
+		var item Message
+		if err := rows.Scan(&item.ID, &item.ChannelID, &item.AuthorID, &item.Content, &item.CreatedAt); err != nil {
+			return Page{}, fmt.Errorf("scan message: %w", err)
+		}
+		page.Messages = append(page.Messages, item)
+	}
+	if err := rows.Err(); err != nil {
+		return Page{}, fmt.Errorf("iterate messages: %w", err)
+	}
+	if len(page.Messages) == limit {
+		next := page.Messages[len(page.Messages)-1].ID
+		page.NextBefore = &next
+	}
+	return page, nil
+}

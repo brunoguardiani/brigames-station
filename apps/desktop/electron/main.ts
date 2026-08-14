@@ -10,6 +10,8 @@ type User = { username: string; email: string; role: string };
 type Tokens = { access_token: string; refresh_token: string };
 type Server = { id: number; name: string; description: string; created_by: number; membership_role: 'owner' | 'member'; created_at: string };
 type Channel = { id: number; server_id: number; name: string; type: 'text'; position: number; created_by: number; created_at: string };
+type Message = { id: number; channel_id: number; author_id: number; content: string; created_at: string };
+type MessagePage = { messages: Message[]; next_before: number | null };
 
 function refreshTokenPath(): string { return path.join(app.getPath('userData'), 'refresh-token.bin'); }
 async function saveRefreshToken(token: string): Promise<void> {
@@ -116,6 +118,8 @@ ipcMain.handle('servers:leave', (_event, serverID: unknown): Promise<void> => {
   if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.');
   return authenticatedRequest<void>('/servers/' + serverID + '/leave', 'POST');
 });
+ipcMain.handle('messages:list', (_event, channelID: unknown): Promise<MessagePage> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0) throw new Error('Invalid channel ID.'); return authenticatedRequest<MessagePage>('/channels/' + channelID + '/messages'); });
+ipcMain.handle('messages:create', (_event, channelID: unknown, content: unknown): Promise<Message> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0 || typeof content !== 'string') throw new Error('Invalid message input.'); return authenticatedRequest<Message>('/channels/' + channelID + '/messages', 'POST', { content }); });
 
 app
   .whenReady()

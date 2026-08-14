@@ -186,3 +186,19 @@ users, including the authorization boundaries needed for future messages.
 - [x] A member can leave; the last server owner cannot leave.
 - [x] The desktop lists servers and channels through typed IPC without exposing
   raw tokens to Angular.
+
+## Phase 3 — Text Messages
+
+Phase 3 adds persistent, paginated text messages through HTTP. Its approved
+scope is documented in [`phase-3-messages.md`](./phase-3-messages.md).
+
+1. Extend OpenAPI with message contracts.
+2. Add the messages migration, authorization, and tests.
+3. Add HTTP handlers and Postman coverage.
+4. Extend Electron and Angular for listing and sending messages.
+
+### Delivered Scope
+
+- [x] Add message contracts, migration, membership authorization, and tests.
+- [x] Add HTTP list/create operations and Postman coverage.
+- [x] Extend Electron and Angular to display and send channel messages.

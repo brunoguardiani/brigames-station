@@ -13,7 +13,9 @@
     { "key": "refreshToken", "value": "" },
     { "key": "serverId", "value": "" },
     { "key": "serverName", "value": "My test server" },
-    { "key": "channelName", "value": "planning" }
+    { "key": "channelName", "value": "planning" },
+    { "key": "channelId", "value": "" },
+    { "key": "messageContent", "value": "Hello from Postman" }
   ],
   "item": [
     {
@@ -81,6 +83,13 @@
           "name": "Leave Server",
           "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/servers/{{serverId}}/leave" }
         }
+      ]
+    },
+    {
+      "name": "Messages (Phase 3)",
+      "item": [
+        { "name": "Create Message", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"content\": \"{{messageContent}}\"\n}" }, "url": "{{baseUrl}}/channels/{{channelId}}/messages" } },
+        { "name": "List Messages", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/channels/{{channelId}}/messages" } }
       ]
     }
   ]

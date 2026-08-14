@@ -17,8 +17,9 @@
         @if (selectedServer(); as server) {
           <div class="channel-heading"><h2>{{ server.name }}</h2><button type="button" (click)="leaveSelectedServer()" [disabled]="loading()">Leave server</button></div>
           <p>{{ server.description || 'No description.' }}</p><h3>Text channels</h3>
-          <ul>@for (channel of channels(); track channel.id) { <li># {{ channel.name }}</li> }</ul>
+          <ul>@for (channel of channels(); track channel.id) { <li><button type="button" (click)="selectChannel(channel)"># {{ channel.name }}</button></li> }</ul>
           @if (server.membership_role === 'owner') { <form (ngSubmit)="createChannel()"><label>New channel<input name="channelName" [(ngModel)]="channelName" required maxlength="100"></label><button type="submit" [disabled]="loading()">Add channel</button></form> }
+          @if (selectedChannel(); as channel) { <section><h3># {{ channel.name }}</h3><div class="messages">@for (message of messages(); track message.id) { <p>{{ message.content }}</p> }</div><form (ngSubmit)="sendMessage()"><label>Message<input name="messageContent" [(ngModel)]="messageContent" required maxlength="4000"></label><button type="submit" [disabled]="loading()">Send</button></form></section> }
         } @else { <p>Select a server or create your first one.</p> }
       </section>
     </section>

@@ -21,6 +21,7 @@ interface Window {
       list(serverID: number): Promise<Channel[]>;
       create(serverID: number, name: string): Promise<Channel>;
     };
+    messages: { list(channelID: number): Promise<MessagePage>; create(channelID: number, content: string): Promise<Message>; };
   };
 }
 
@@ -42,3 +43,5 @@ interface Channel {
   created_by: number;
   created_at: string;
 }
+interface Message { id: number; channel_id: number; author_id: number; content: string; created_at: string; }
+interface MessagePage { messages: Message[]; next_before: number | null; }

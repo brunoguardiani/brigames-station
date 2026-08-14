@@ -13,9 +13,11 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly servers = signal<Server[]>([]);
   protected readonly channels = signal<Channel[]>([]);
   protected readonly selectedServer = signal<Server | null>(null);
+  protected readonly selectedChannel = signal<Channel | null>(null);
+  protected readonly messages = signal<Message[]>([]);
   protected readonly error = signal('');
   protected readonly loading = signal(false);
-  protected identity = ''; protected password = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = '';
+  protected identity = ''; protected password = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = ''; protected messageContent = '';
   private healthCheckTimer?: ReturnType<typeof setInterval>;
 
   ngOnInit(): void { void this.refreshBackendStatus(); void this.restoreSession(); this.healthCheckTimer = setInterval(() => void this.refreshBackendStatus(), 5_000); }
@@ -34,10 +36,12 @@ export class AppComponent implements OnInit, OnDestroy {
     finally { this.loading.set(false); }
   }
   protected async selectServer(server: Server): Promise<void> {
-    this.error.set(''); this.selectedServer.set(server); this.channels.set([]);
+    this.error.set(''); this.selectedServer.set(server); this.selectedChannel.set(null); this.messages.set([]); this.channels.set([]);
     try { this.channels.set(await window.desktop.channels.list(server.id)); }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to load channels.')); }
   }
+  protected async selectChannel(channel: Channel): Promise<void> { this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
+  protected async sendMessage(): Promise<void> { const channel = this.selectedChannel(); if (!channel) return; this.loading.set(true); try { await window.desktop.messages.create(channel.id, this.messageContent); this.messageContent = ''; await this.selectChannel(channel); } catch (error) { this.error.set(this.messageFor(error, 'Unable to send message.')); } finally { this.loading.set(false); } }
   protected async createChannel(): Promise<void> {
     const server = this.selectedServer(); if (!server) return;
     this.loading.set(true); this.error.set(''); const name = this.channelName;
