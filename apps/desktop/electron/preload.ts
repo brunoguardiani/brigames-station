@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   auth: {
     login: (identity: string, password: string) => ipcRenderer.invoke('auth:login', identity, password),
+    register: (username: string, email: string, password: string) => ipcRenderer.invoke('auth:register', username, email, password),
     currentSession: () => ipcRenderer.invoke('auth:current-session'),
     logout: () => ipcRenderer.invoke('auth:logout'),
   },

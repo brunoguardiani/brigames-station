@@ -102,6 +102,14 @@ async function saveRefreshToken(token: string): Promise<void> {
 async function loadRefreshToken(): Promise<string | null> {
   try { return safeStorage.decryptString(await fs.readFile(refreshTokenPath())); } catch { return null; }
 }
+async function responseMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json() as { message?: unknown };
+    return typeof body.message === 'string' && body.message.trim() ? body.message : fallback;
+  } catch {
+    return fallback;
+  }
+}
 async function authenticate(pathname: string, body: Record<string, string>): Promise<User> {
   const response = await fetch(backendURL + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!response.ok) throw new Error('Authentication failed.');
@@ -205,6 +213,16 @@ ipcMain.handle('backend:get-health', async (): Promise<{ status: 'alive' }> => {
 ipcMain.handle('auth:login', async (_event, identity: unknown, password: unknown): Promise<User> => {
   if (typeof identity !== 'string' || typeof password !== 'string') throw new Error('Invalid login input.');
   return authenticate('/auth/login', { identity, password });
+});
+ipcMain.handle('auth:register', async (_event, username: unknown, email: unknown, password: unknown): Promise<User> => {
+  if (typeof username !== 'string' || typeof email !== 'string' || typeof password !== 'string') throw new Error('Invalid registration input.');
+  const response = await fetch(backendURL + '/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, email, password }),
+  });
+  if (!response.ok) throw new Error(await responseMessage(response, 'Unable to create the account.'));
+  return authenticate('/auth/login', { identity: username, password });
 });
 ipcMain.handle('auth:current-session', async (): Promise<User | null> => {
   const refreshToken = await loadRefreshToken();

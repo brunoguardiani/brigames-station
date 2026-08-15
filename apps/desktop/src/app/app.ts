@@ -24,7 +24,8 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly voiceParticipants = signal<VoiceParticipant[]>([]);
   protected readonly activeSpeakerIDs = signal<string[]>([]);
   protected readonly microphoneMuted = signal(false);
-  protected identity = ''; protected password = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = ''; protected channelType: 'text' | 'voice' = 'text'; protected messageContent = ''; protected inviteCode = ''; protected createdInvite = '';
+  protected registrationMode = false;
+  protected identity = ''; protected username = ''; protected email = ''; protected password = ''; protected passwordConfirmation = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = ''; protected channelType: 'text' | 'voice' = 'text'; protected messageContent = ''; protected inviteCode = ''; protected createdInvite = '';
   private healthCheckTimer?: ReturnType<typeof setInterval>;
   private removeRealtimeConnectedListener?: () => void;
   private removeRealtimeMessageListener?: () => void;
@@ -69,6 +70,25 @@ export class AppComponent implements OnInit, OnDestroy {
     this.loading.set(true); this.error.set('');
     try { this.user.set(await window.desktop.auth.login(this.identity, this.password)); this.password = ''; await this.loadServers(); }
     catch (error) { this.error.set(this.messageFor(error, 'Login failed. Check your credentials and backend connection.')); }
+    finally { this.loading.set(false); }
+  }
+  protected toggleRegistrationMode(): void {
+    this.registrationMode = !this.registrationMode;
+    this.error.set('');
+    this.password = '';
+    this.passwordConfirmation = '';
+  }
+  protected async register(): Promise<void> {
+    if (this.password !== this.passwordConfirmation) {
+      this.error.set('Passwords do not match.');
+      return;
+    }
+    this.loading.set(true); this.error.set('');
+    try {
+      this.user.set(await window.desktop.auth.register(this.username, this.email, this.password));
+      this.password = ''; this.passwordConfirmation = '';
+      await this.loadServers();
+    } catch (error) { this.error.set(this.messageFor(error, 'Unable to create the account.')); }
     finally { this.loading.set(false); }
   }
   protected async logout(): Promise<void> { await this.leaveVoiceChannel(); await window.desktop.auth.logout(); this.user.set(null); this.servers.set([]); this.channels.set([]); this.selectedServer.set(null); this.error.set(''); }
