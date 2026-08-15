@@ -59,5 +59,11 @@ func main() {
 		logger.Error("migrate database", "error", err)
 		os.Exit(1)
 	}
+	for _, migration := range result.Applied {
+		logger.Info("migration applied", "migration", migration.ID())
+	}
+	for _, migration := range result.Reverted {
+		logger.Info("migration reverted", "migration", migration.ID())
+	}
 	logger.Info("migrations complete", "target", result.Target, "applied", len(result.Applied), "reverted", len(result.Reverted))
 }

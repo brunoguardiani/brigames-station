@@ -34,6 +34,7 @@ microphone and joins automatically. Use the `Sair de <canal>` button to leave.
 - Delivered: voice-channel type, membership-gated LiveKit token issuance,
   local LiveKit Compose service, desktop microphone publishing, and remote
   audio playback.
-- Deliberately deferred: video, screen sharing, device selection, mute UI,
-  participant/presence display, recording, TURN configuration, and
-  multi-instance operational infrastructure.
+- Transferred to and completed in Phase 7: mute UI, voice-participant display,
+  active-speaker indication, and server-member presence.
+- Deliberately deferred: video, screen sharing, device selection, recording,
+  TURN configuration, and multi-instance operational infrastructure.
