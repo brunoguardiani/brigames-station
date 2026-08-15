@@ -34,6 +34,16 @@ or configuring public voice media yet.
   WSS, LiveKit/TURN, and desktop release configuration are subsequent
   deliveries.
 
+## Delivery 2 — API TLS
+
+- `api.groupgo.com.br` resolves to the Lightsail static IP.
+- The base Compose file keeps Nginx on HTTP solely to serve the ACME webroot.
+- `certbot` is an opt-in Compose tool using the official pinned Certbot image.
+- After the initial certificate is issued, `docker-compose.tls.yml` replaces
+  the Nginx configuration with HTTPS/WSS and redirects HTTP to HTTPS.
+- Certificate renewal uses the same persistent Docker volumes; Nginx must be
+  reloaded after a successful renewal.
+
 ## Operational Rules
 
 - Never commit `.env.production`, database credentials, JWT secrets, or

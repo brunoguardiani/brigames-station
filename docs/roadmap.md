@@ -296,12 +296,12 @@ Its active design is documented in [`phase-8-remote.md`](./phase-8-remote.md).
 - [x] Provision a Supabase PostgreSQL project and apply the existing schema.
 - [x] Provision an Ubuntu 24.04 Lightsail VPS with static IP, restricted SSH,
   HTTP/HTTPS firewall rules, Docker, and a read-only deploy key.
-- [ ] Add a reproducible API/Nginx production Compose runtime.
-- [ ] Validate the API through the VPS public IP before enabling TLS.
+- [x] Add a reproducible API/Nginx production Compose runtime.
+- [x] Validate the API through the VPS public IP before enabling TLS.
 
 ### Deferred Deliveries
 
-- Configure the public domain, TLS, and production WSS endpoint.
+- [ ] Configure the public domain, TLS, and production WSS endpoint.
 - Deploy LiveKit with production keys, TURN, and the required TCP/UDP ports.
 - Build and validate the desktop against the remote HTTPS/WSS endpoints.
 - Document backups, upgrades, monitoring, and rollback procedures.
