@@ -301,7 +301,8 @@ Its active design is documented in [`phase-8-remote.md`](./phase-8-remote.md).
 
 ### Deferred Deliveries
 
-- [ ] Configure the public domain, TLS, and production WSS endpoint.
-- Deploy LiveKit with production keys, TURN, and the required TCP/UDP ports.
-- Build and validate the desktop against the remote HTTPS/WSS endpoints.
-- Document backups, upgrades, monitoring, and rollback procedures.
+- [x] Configure the public domain, TLS, and production WSS endpoint.
+- [x] Deploy a single-node LiveKit runtime with production keys and the
+  required TCP/UDP ports. TURN remains a future connectivity enhancement.
+- [x] Build and validate the desktop against the remote HTTPS/WSS endpoints.
+- [x] Document backups, upgrades, monitoring, rollback, and TLS renewal.

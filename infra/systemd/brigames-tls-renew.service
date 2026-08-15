@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew brigames-station TLS certificates
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/brigames-station
+ExecStart=/opt/brigames-station/scripts/renew-tls.sh

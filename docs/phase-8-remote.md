@@ -59,6 +59,63 @@ or configuring public voice media yet.
 - TURN is intentionally deferred. It is needed as a connectivity fallback for
   restrictive networks, not to operate the initial small single-VPS service.
 
+## Delivery 4 — Operations
+
+### TLS renewal
+
+`scripts/renew-tls.sh` renews certificates through the existing Certbot
+webroot and reloads Nginx only after a successful renewal. Install its timer
+on the VPS with:
+
+```bash
+sudo cp infra/systemd/brigames-tls-renew.service /etc/systemd/system/
+sudo cp infra/systemd/brigames-tls-renew.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now brigames-tls-renew.timer
+systemctl list-timers brigames-tls-renew.timer
+```
+
+The timer runs twice daily; Certbot performs no certificate change until a
+renewal is due. A manual verification is safe:
+
+```bash
+sudo systemctl start brigames-tls-renew.service
+sudo journalctl -u brigames-tls-renew.service -n 50 --no-pager
+```
+
+### Routine deployment and validation
+
+Run migrations explicitly before an API release, then update the services:
+
+```bash
+cd /opt/brigames-station
+git pull --ff-only
+docker compose -f docker-compose.production.yml --profile tools run --rm migrate
+docker compose -f docker-compose.production.yml -f docker-compose.tls.yml -f docker-compose.livekit.yml up -d --build api nginx livekit
+docker compose -f docker-compose.production.yml -f docker-compose.tls.yml -f docker-compose.livekit.yml ps
+curl --fail https://api.groupgo.com.br/health
+curl --fail https://api.groupgo.com.br/ready
+```
+
+Use `docker compose ... logs --tail=100 api nginx livekit` for runtime logs.
+Supabase remains responsible for PostgreSQL backups; no database volume exists
+on the VPS.
+
+### Rollback
+
+Keep a known-good Git commit. To return to it, stop at the checkout before
+touching database migrations, then redeploy the same Compose command:
+
+```bash
+cd /opt/brigames-station
+git log --oneline
+git switch --detach <known-good-commit>
+docker compose -f docker-compose.production.yml -f docker-compose.tls.yml -f docker-compose.livekit.yml up -d --build api nginx livekit
+```
+
+Do not roll back a database schema unless the associated migration has an
+explicit reverse migration and the release plan permits it.
+
 ## Operational Rules
 
 - Never commit `.env.production`, database credentials, JWT secrets, or
