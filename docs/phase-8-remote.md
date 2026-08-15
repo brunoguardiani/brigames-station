@@ -44,6 +44,21 @@ or configuring public voice media yet.
 - Certificate renewal uses the same persistent Docker volumes; Nginx must be
   reloaded after a successful renewal.
 
+## Delivery 3 — LiveKit Voice Runtime
+
+- `docker-compose.livekit.yml` is an opt-in overlay on the production and TLS
+  Compose files; it runs exactly one pinned LiveKit node and introduces no
+  Redis dependency.
+- Signaling uses `wss://livekit.groupgo.com.br` through Nginx and a separate
+  trusted TLS certificate.
+- Media uses `7882/UDP` with UDP mux and `7881/TCP` as the ICE fallback. Both
+  ports must be opened in the Lightsail firewall before client testing.
+- LiveKit receives its API credentials only from `.env.production` through
+  `LIVEKIT_KEYS`, in the exact `key: secret` format; that key/secret pair must
+  match the API's `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`.
+- TURN is intentionally deferred. It is needed as a connectivity fallback for
+  restrictive networks, not to operate the initial small single-VPS service.
+
 ## Operational Rules
 
 - Never commit `.env.production`, database credentials, JWT secrets, or

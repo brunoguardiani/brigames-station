@@ -1,0 +1,11 @@
+# Single-node LiveKit configuration for the remote brigames-station VPS.
+# TLS for signaling is terminated by Nginx; API keys are supplied at runtime
+# through LIVEKIT_KEYS and are not stored in this repository.
+port: 7880
+log_level: info
+
+rtc:
+  # A compact port configuration for the initial single-VPS deployment.
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: true

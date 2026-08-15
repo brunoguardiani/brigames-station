@@ -1,0 +1,22 @@
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.4
+    command: ["--config", "/etc/livekit/config.yaml"]
+    env_file: ${ENV_FILE:-.env.production}
+    environment:
+      LIVEKIT_KEYS: ${LIVEKIT_KEYS:?LIVEKIT_KEYS is required}
+    expose:
+      - "7880"
+    ports:
+      - "7881:7881/tcp"
+      - "7882:7882/udp"
+    volumes:
+      - ./infra/livekit/config.yaml:/etc/livekit/config.yaml:ro
+    restart: unless-stopped
+
+  nginx:
+    depends_on:
+      livekit:
+        condition: service_started
+    volumes:
+      - ./infra/nginx/remote.https.conf:/etc/nginx/conf.d/default.conf:ro
