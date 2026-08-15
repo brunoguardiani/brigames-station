@@ -63,7 +63,8 @@ Node APIs.
 Production uses a remote VPS with a TLS reverse proxy in front of the Go API.
 Desktop configuration uses the remote HTTPS API URL; the application derives
 the WSS URL from it. Local development may continue to use
-`http://127.0.0.1`. Do not expose PostgreSQL directly to the internet.
+`http://127.0.0.1`. PostgreSQL can run as a managed remote service; require TLS
+and restrict database access to the API host where the provider supports it.
 Configure production secrets outside source control, enable backups, and
 restrict WebSocket origins.
 

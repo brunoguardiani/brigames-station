@@ -1,0 +1,6 @@
+# Local Go build artifacts must never be sent to the Docker build context.
+*.exe
+*.test
+*.out
+bin/
+coverage.txt

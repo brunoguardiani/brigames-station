@@ -285,3 +285,23 @@ realtime hub appropriate for the current deployment model.
 - [x] Voice participants and active speakers are visible in the desktop UI.
 - [x] A connected user can mute/unmute their microphone and leave a call using
   icon-only controls.
+
+## Phase 8 — Remote Environment
+
+Phase 8 prepares a controlled remote deployment in incremental deliveries.
+Its active design is documented in [`phase-8-remote.md`](./phase-8-remote.md).
+
+### Delivery 1 — API Runtime
+
+- [x] Provision a Supabase PostgreSQL project and apply the existing schema.
+- [x] Provision an Ubuntu 24.04 Lightsail VPS with static IP, restricted SSH,
+  HTTP/HTTPS firewall rules, Docker, and a read-only deploy key.
+- [ ] Add a reproducible API/Nginx production Compose runtime.
+- [ ] Validate the API through the VPS public IP before enabling TLS.
+
+### Deferred Deliveries
+
+- Configure the public domain, TLS, and production WSS endpoint.
+- Deploy LiveKit with production keys, TURN, and the required TCP/UDP ports.
+- Build and validate the desktop against the remote HTTPS/WSS endpoints.
+- Document backups, upgrades, monitoring, and rollback procedures.

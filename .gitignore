@@ -1,6 +1,7 @@
 # Environment and local configuration
 .env
 .env.local
+.env.production
 .env.*.local
 !.env.example
 

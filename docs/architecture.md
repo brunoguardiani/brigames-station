@@ -77,11 +77,13 @@ The initial production environment is a single remote VPS for a small private
 group, including approximately 30 concurrent users.
 
 ```text
-Desktop Electron -> HTTPS / WSS -> TLS reverse proxy -> Go backend -> PostgreSQL
+Desktop Electron -> HTTPS / WSS -> TLS reverse proxy -> Go backend -> managed PostgreSQL
 ```
 
 - The reverse proxy terminates TLS and forwards HTTPS/WSS traffic to the backend.
-- PostgreSQL is private to the VPS network and must not be publicly exposed.
+- PostgreSQL may be a managed remote service. Its connection is restricted to
+  the API host where supported, uses TLS, and its connection string is supplied
+  only through the host environment.
 - Production secrets, including `AUTH_JWT_SECRET`, are supplied by the host environment and never committed.
 - WebSocket endpoints authenticate connections, validate allowed origin, and bound message size.
 - Logs must not contain credentials, JWTs, refresh tokens, invite codes, or message content.
