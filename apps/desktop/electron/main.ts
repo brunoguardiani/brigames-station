@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, ipcMain, nativeImage, safeStorage } from
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 
-const backendURL = process.env['DESKTOP_BACKEND_URL'] ?? 'http://127.0.0.1:8080';
+const backendURL = process.env['DESKTOP_BACKEND_URL'] ?? (app.isPackaged ? 'https://api.groupgo.com.br' : 'http://127.0.0.1:8080');
 const backendHealthURL = backendURL + '/health';
 if (process.platform === 'win32') app.setAppUserModelId('com.brigames-station.desktop');
 let accessToken: string | undefined;
@@ -12,6 +12,7 @@ let reconnectDelayMilliseconds = 1_000;
 
 function desktopAssetPath(filename: string): string {
   const candidates = [
+    path.join(process.resourcesPath, 'assets', filename),
     path.join(app.getAppPath(), 'src', 'assets', filename),
     path.resolve(__dirname, '..', 'src', 'assets', filename),
   ];

@@ -1,13 +1,15 @@
 {
   "name": "@brigames-station/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "brigames-station desktop application.",
+  "author": "Bruno Guardiani",
   "main": "dist-electron/main.js",
   "scripts": {
     "build": "ng build && tsc -p electron/tsconfig.json",
     "serve": "ng serve --host 127.0.0.1 --port 4200",
-    "electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js"
+    "electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js",
+    "dist:win": "pnpm run build && electron-builder --win nsis --x64"
   },
   "dependencies": {
     "@angular/common": "22.1.2",
@@ -28,6 +30,44 @@
     "@types/node": "^26.2.0",
     "@types/sdp-transform": "^3.0.0",
     "electron": "43.4.0",
+    "electron-builder": "26.15.6",
     "typescript": "^6.0.3"
+  },
+  "build": {
+    "appId": "com.brigames-station.desktop",
+    "productName": "brigames-station",
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "src/assets",
+        "to": "assets"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "src/assets/brigames-station-icon.png",
+      "artifactName": "brigames-station-Setup-${version}.${ext}",
+      "signExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

@@ -114,6 +114,23 @@ pnpm --filter @brigames-station/desktop run build
 pnpm --filter @brigames-station/desktop run electron
 ```
 
+## Build the Windows installer
+
+Create the 64-bit NSIS installer from the workspace root:
+
+```powershell
+pnpm --filter @brigames-station/desktop run dist:win
+```
+
+The artifact is written to
+`apps/desktop/release/brigames-station-Setup-<version>.exe`. The packaged
+application defaults to `https://api.groupgo.com.br`; a local development
+session may still override it with `DESKTOP_BACKEND_URL`.
+
+The first public builds are not code signed, so Windows may display an
+"unknown publisher" warning. Distribute the installer only through a trusted
+channel and provide its SHA-256 checksum alongside the file.
+
 For Angular development with live reload, use two terminals. Start the Angular
 development server in the first:
 
