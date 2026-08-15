@@ -3,8 +3,6 @@ services:
     image: livekit/livekit-server:v1.13.4
     command: ["--config", "/etc/livekit/config.yaml"]
     env_file: ${ENV_FILE:-.env.production}
-    environment:
-      LIVEKIT_KEYS: ${LIVEKIT_KEYS:?LIVEKIT_KEYS is required}
     expose:
       - "7880"
     ports:
