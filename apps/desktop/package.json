@@ -4,6 +4,7 @@
   "private": true,
   "description": "brigames-station desktop application.",
   "author": "Bruno Guardiani",
+  "desktopName": "brigames-station.desktop",
   "main": "dist-electron/main.js",
   "scripts": {
     "build": "ng build && tsc -p electron/tsconfig.json",
@@ -39,6 +40,7 @@
   "build": {
     "appId": "com.brigames-station.desktop",
     "productName": "brigames-station",
+    "executableName": "brigames-station",
     "directories": {
       "buildResources": "build",
       "output": "release"
@@ -98,6 +100,7 @@
       ],
       "icon": "src/assets/brigames-station-icon.png",
       "category": "Network;Chat;InstantMessaging",
+      "syncDesktopName": true,
       "artifactName": "brigames-station-${version}-${arch}.${ext}"
     }
   }
