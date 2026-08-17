@@ -16,3 +16,9 @@ select{font:inherit;width:100%;border:1px solid transparent;border-radius:.5rem;
 .voice-media-grid.has-featured{grid-template-columns:minmax(0,1fr) clamp(9rem,16vw,14rem);grid-template-rows:repeat(var(--voice-media-secondary-count,1),minmax(0,1fr))}.voice-media-grid.has-featured> .voice-media-tile.featured{grid-column:1;grid-row:1/-1;width:100%;height:100%}.voice-media-grid.has-featured> .voice-media-tile:not(.featured){grid-column:2;grid-row:auto;width:100%;height:100%}
 .voice-media-grid{position:relative}.voice-media-tile.featured{border-color:var(--accent)}
 .channel-list button .voice-watching-indicator{display:grid;place-items:center;width:1.15rem;height:1.15rem;margin-left:auto;color:#a59eff;font-size:inherit}.voice-watching-indicator svg{width:1rem;height:1rem}
+
+/* Menus anchored in the server sidebar must be able to overlay the workspace. */
+.channel-sidebar{overflow:visible}
+
+/* The join-server form originates in this rail and must clear the channel sidebar. */
+.server-rail{z-index:15}
