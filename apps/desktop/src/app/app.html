@@ -21,42 +21,79 @@
         <nav class="channel-list" aria-label="Canais de voz">
           @for (channel of channels(); track channel.id) {
             @if (channel.type === 'voice') {
-              <button type="button" [class.selected]="voiceChannel()?.id === channel.id" (click)="joinVoiceChannel(channel)"><span>&#9673;</span>{{ channel.name }}</button>
-              @if (voiceChannel()?.id === channel.id) {
+              <button type="button" [class.selected]="voiceChannel()?.id === channel.id" (click)="joinVoiceChannel(channel)">
+                <span>&#9673;</span>{{ channel.name }}
+                @if (voiceChannel()?.id === channel.id && voiceMediaActive() && voiceMediaVisible()) {
+                  <span class="voice-watching-indicator" title="Assistindo transmissão" aria-label="Assistindo transmissão">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m8 22 4-4 4 4"/><path d="M12 18v4"/></svg>
+                  </span>
+                }
+              </button>
+              @if (voiceMembers(channel.id).length > 0) {
                 <div class="voice-participants">
-                  @for (participant of voiceParticipants(); track participant.identity) {
+                  @for (member of voiceMembers(channel.id); track member.id) {
                     <div>
-                      <span class="voice-participant-avatar" [class.speaking]="isSpeaking(participant)">{{ participant.name.slice(0, 1).toUpperCase() }}</span>
-                      <span>{{ participant.name }}</span>
-                      @if (participant.muted) {
+                      <span class="voice-participant-avatar" [class.speaking]="isVoiceMemberSpeaking(member)">{{ member.username.slice(0, 1).toUpperCase() }}</span>
+                      <span>{{ member.username }}</span>
+                      @if (voiceChannel()?.id === channel.id && isVoiceMemberMuted(member)) {
                         <span class="voice-participant-muted" title="Microfone silenciado" aria-label="Microfone silenciado">
                           <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg>
                         </span>
                       }
                     </div>
                   }
-                  <button class="mute-voice" type="button" [class.muted]="microphoneMuted()" [title]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" (click)="toggleMicrophone()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg><span>{{ microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone' }}</span></button>
-                  <button class="leave-voice" type="button" title="Sair do canal de voz" aria-label="Sair do canal de voz" (click)="leaveVoiceChannel()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8.01 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92"/><path d="m3 3 18 18"/></svg><span>Sair da voz</span></button>
+                  @if (voiceChannel()?.id === channel.id) {
+                    <button class="mute-voice" type="button" [class.muted]="microphoneMuted()" [title]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" (click)="toggleMicrophone()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg><span>{{ microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone' }}</span></button>
+                    <button class="leave-voice" type="button" title="Sair do canal de voz" aria-label="Sair do canal de voz" (click)="leaveVoiceChannel()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8.01 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92"/><path d="m3 3 18 18"/></svg><span>Sair da voz</span></button>
+                  }
                 </div>
               }
             }
           } @empty { <p>Nenhum canal de voz ainda.</p> }
         </nav>
       } @else { <section class="sidebar-empty"><div class="empty-icon">⌘</div><h2>Your servers</h2><p>Select a server on the left or create a new one.</p></section> }
-      @if (voiceChannel()) { <div class="voice-controls"><button type="button" [class.muted]="microphoneMuted()" [title]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" [attr.aria-label]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" (click)="toggleMicrophone()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg></button><button class="leave-call" type="button" title="Sair do canal de voz" aria-label="Sair do canal de voz" (click)="leaveVoiceChannel()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8.01 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92"/><path d="m3 3 18 18"/></svg></button></div> }
+      @if (voiceChannel()) {
+        <div class="voice-controls">
+          <button type="button" [class.muted]="microphoneMuted()" [title]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" [attr.aria-label]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" (click)="toggleMicrophone()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg></button>
+          <button class="camera-control" type="button" [class.active]="cameraEnabled()" [title]="cameraEnabled() ? 'Desativar câmera' : 'Ativar câmera'" [attr.aria-label]="cameraEnabled() ? 'Desativar câmera' : 'Ativar câmera'" (click)="toggleCamera()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 10 4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg></button>
+          <button class="screen-share-control" type="button" [class.active]="screenSharing()" [title]="screenSharing() ? 'Parar compartilhamento de tela' : 'Compartilhar tela'" [attr.aria-label]="screenSharing() ? 'Parar compartilhamento de tela' : 'Compartilhar tela'" (click)="screenSharing() ? stopScreenShare() : openScreenSharePicker()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="m8 21 4-4 4 4"/><path d="M12 17v4"/></svg></button>
+          <button class="leave-call" type="button" title="Sair do canal de voz" aria-label="Sair do canal de voz" (click)="leaveVoiceChannel()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8.01 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92"/><path d="m3 3 18 18"/></svg></button>
+        </div>
+      }
       <footer class="account-bar"><div class="avatar">{{ user()!.username.slice(0, 1).toUpperCase() }}</div><div><strong>{{ user()!.username }}</strong><small>{{ user()!.role }}</small></div><button type="button" title="Log out" (click)="logout()">⇥</button></footer>
     </aside>
 
-    <section class="conversation-panel">
+    <section class="conversation-panel" [class.voice-media-active]="voiceMediaActive() && voiceMediaVisible()">
+      @if (voiceChannel()) {
+        <section class="voice-video-stage" aria-label="Vídeos do canal de voz">
+          <div id="voice-media-grid" class="voice-media-grid"></div>
+          <div id="camera-videos" class="camera-videos"></div>
+        </section>
+      }
       @if (selectedChannel(); as channel) {
         <header class="conversation-header"><div><span>#</span><h1>{{ channel.name }}</h1></div><span class="connection-status" [class.available]="status() === 'available'">{{ status() }}</span></header>
         <section class="message-list" aria-live="polite">@for (message of messages(); track message.id) { <article class="message"><div class="message-avatar">{{ message.author_username.slice(0, 1).toUpperCase() }}</div><div><header><strong>{{ message.author_username }}</strong><time [attr.datetime]="message.created_at">{{ message.created_at.slice(11, 16) }}</time></header><p>{{ message.content }}</p></div></article> } @empty { <section class="conversation-empty"><div class="empty-icon">#</div><h2>Welcome to #{{ channel.name }}</h2><p>This is the beginning of the channel. Say hello to your group.</p></section> }</section>
-        <form class="message-composer" (ngSubmit)="sendMessage()"><label class="sr-only" for="message-content">Message</label><textarea id="message-content" name="messageContent" [(ngModel)]="messageContent" required maxlength="4000" rows="1" [placeholder]="'Message #' + channel.name"></textarea><button type="submit" [disabled]="loading() || !messageContent.trim()">Send</button></form>
+        <form #messageComposer class="message-composer" (ngSubmit)="sendMessage()"><label class="sr-only" for="message-content">Message</label><textarea id="message-content" name="messageContent" [(ngModel)]="messageContent" required maxlength="4000" rows="1" [placeholder]="'Message #' + channel.name" (keydown)="handleMessageComposerKeydown($event, messageComposer)"></textarea><button type="submit" [disabled]="loading() || !messageContent.trim()">Send</button></form>
       } @else { <section class="workspace-empty"><img class="brand large" src="assets/brigames-station-icon.png" alt=""><h1>Welcome to brigames-station</h1><p>Select a server and channel to begin a conversation.</p></section> }
     </section>
     <aside class="members-sidebar" aria-label="Membros do servidor">@if (selectedServer()) { <header><strong>Membros</strong><span>{{ members().length }}</span></header><div class="member-list">@for (member of members(); track member.id) { <div class="member" [class.online]="member.online"><span class="member-avatar">{{ member.username.slice(0, 1).toUpperCase() }}</span><div><strong>{{ member.username }}</strong><small>{{ member.online ? 'online' : 'offline' }}</small></div><span class="presence-dot" [class.online]="member.online"></span></div> }</div> }</aside>
   } @else {
     <section class="login-view"><div class="login-intro"><img class="login-mascot" src="assets/brigames-station-mascot.png" alt="Mascote brigames-station"><p class="login-quote">“Queres ser baitado?” - Britt1n</p><span class="connection-status" [class.available]="status() === 'available'">Backend {{ status() }}</span></div><form class="login-card" (ngSubmit)="registrationMode ? register() : login()"><h2>{{ registrationMode ? 'Create an account' : 'Welcome back' }}</h2><p>{{ registrationMode ? 'Join your group on brigames-station.' : 'Sign in to continue to your servers.' }}</p>@if (registrationMode) { <label>Username<input name="username" [(ngModel)]="username" autocomplete="username" required autofocus maxlength="64"></label><label>Email<input name="email" [(ngModel)]="email" type="email" autocomplete="email" required maxlength="254"></label> } @else { <label>Username or email<input name="identity" [(ngModel)]="identity" autocomplete="username" required autofocus></label> }<label>Password<input name="password" [(ngModel)]="password" type="password" [attr.autocomplete]="registrationMode ? 'new-password' : 'current-password'" required></label>@if (registrationMode) { <label>Confirm password<input name="passwordConfirmation" [(ngModel)]="passwordConfirmation" type="password" autocomplete="new-password" required></label> }<button type="submit" [disabled]="loading()">{{ loading() ? (registrationMode ? 'Creating account...' : 'Signing in...') : (registrationMode ? 'Create account' : 'Sign in') }}</button><button class="auth-mode-toggle" type="button" [disabled]="loading()" (click)="toggleRegistrationMode()">{{ registrationMode ? 'Already have an account? Sign in' : 'Create an account' }}</button></form></section>
+  }
+  @if (screenSharePickerOpen()) {
+    <section class="modal-backdrop" (click)="cancelScreenSharePicker()">
+      <section class="screen-share-modal" role="dialog" aria-modal="true" aria-labelledby="screen-share-title" (click)="$event.stopPropagation()">
+        <h2 id="screen-share-title">Compartilhar tela</h2>
+        <p>Escolha a tela ou janela que deseja mostrar no canal de voz.</p>
+        @if (systemAudioSupported) { <label class="screen-audio-option"><input type="checkbox" name="shareSystemAudio" [(ngModel)]="shareSystemAudio"> Compartilhar áudio do sistema</label> }
+        <div class="screen-source-list">
+          @for (source of screenShareSources(); track source.id) {
+            <button type="button" (click)="startScreenShare(source)" [disabled]="loading()"><img [src]="source.thumbnail" alt=""><span>{{ source.name }}</span></button>
+          }
+        </div>
+        <div class="confirmation-actions"><button type="button" (click)="cancelScreenSharePicker()">Cancelar</button></div>
+      </section>
+    </section>
   }
   @if (leaveConfirmationOpen()) { <section class="modal-backdrop" (click)="cancelLeaveServer()"><section class="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="leave-confirmation-title" (click)="$event.stopPropagation()"><h2 id="leave-confirmation-title">Sair de {{ selectedServer()?.name }}?</h2><p>Você perderá acesso aos canais deste server e precisará de um novo convite para entrar novamente.</p><div class="confirmation-actions"><button type="button" (click)="cancelLeaveServer()">Cancelar</button><button class="confirm-leave" type="button" (click)="confirmLeaveServer()" [disabled]="loading()">Sair do server</button></div></section></section> }
   @if (error()) { <p class="error-toast" role="alert">{{ error() }}</p> }

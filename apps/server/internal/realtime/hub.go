@@ -13,16 +13,32 @@ type Event struct {
 	Data any    `json:"data"`
 }
 type Hub struct {
-	mu      sync.RWMutex
-	clients map[int64]map[*client]struct{}
+	mu            sync.RWMutex
+	clients       map[int64]map[*client]struct{}
+	voicePresence map[int64]VoicePresence
 }
 type client struct {
 	conn *websocket.Conn
 	mu   sync.Mutex
 }
 
-func NewHub() *Hub { return &Hub{clients: make(map[int64]map[*client]struct{})} }
-func (h *Hub) Register(userID int64, conn *websocket.Conn) (bool, func() bool) {
+type VoicePresence struct {
+	ServerID  int64 `json:"server_id"`
+	ChannelID int64 `json:"channel_id"`
+}
+
+type UnregisterResult struct {
+	WentOffline   bool
+	VoicePresence *VoicePresence
+}
+
+func NewHub() *Hub {
+	return &Hub{
+		clients:       make(map[int64]map[*client]struct{}),
+		voicePresence: make(map[int64]VoicePresence),
+	}
+}
+func (h *Hub) Register(userID int64, conn *websocket.Conn) (bool, func() UnregisterResult) {
 	c := &client{conn: conn}
 	h.mu.Lock()
 	wasOffline := len(h.clients[userID]) == 0
@@ -31,16 +47,50 @@ func (h *Hub) Register(userID int64, conn *websocket.Conn) (bool, func() bool) {
 	}
 	h.clients[userID][c] = struct{}{}
 	h.mu.Unlock()
-	return wasOffline, func() bool {
+	return wasOffline, func() UnregisterResult {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		delete(h.clients[userID], c)
 		wentOffline := len(h.clients[userID]) == 0
-		if len(h.clients[userID]) == 0 {
-			delete(h.clients, userID)
+		if !wentOffline {
+			return UnregisterResult{}
 		}
-		return wentOffline
+		delete(h.clients, userID)
+		result := UnregisterResult{WentOffline: true}
+		if presence, ok := h.voicePresence[userID]; ok {
+			delete(h.voicePresence, userID)
+			result.VoicePresence = &presence
+		}
+		return result
 	}
+}
+func (h *Hub) SetVoicePresence(userID int64, presence VoicePresence) (*VoicePresence, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	previous, exists := h.voicePresence[userID]
+	if exists && previous == presence {
+		return &previous, false
+	}
+	h.voicePresence[userID] = presence
+	if exists {
+		return &previous, true
+	}
+	return nil, true
+}
+func (h *Hub) ClearVoicePresence(userID int64) (VoicePresence, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	presence, exists := h.voicePresence[userID]
+	if exists {
+		delete(h.voicePresence, userID)
+	}
+	return presence, exists
+}
+func (h *Hub) GetVoicePresence(userID int64) (VoicePresence, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	presence, exists := h.voicePresence[userID]
+	return presence, exists
 }
 func (h *Hub) IsOnline(userID int64) bool {
 	h.mu.RLock()

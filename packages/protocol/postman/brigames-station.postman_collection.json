@@ -114,7 +114,9 @@
     {
       "name": "Voice (Phase 6)",
       "item": [
-        { "name": "Create Voice Token", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/voice/channels/{{channelId}}/token" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 200', () => pm.response.to.have.status(200));", "const body = pm.response.json();", "pm.expect(body.url).to.be.a('string');", "pm.expect(body.token).to.be.a('string');", "pm.expect(body.room).to.be.a('string');"] } }] }
+        { "name": "Create Voice Token", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/voice/channels/{{channelId}}/token" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 200', () => pm.response.to.have.status(200));", "const body = pm.response.json();", "pm.expect(body.url).to.be.a('string');", "pm.expect(body.token).to.be.a('string');", "pm.expect(body.room).to.be.a('string');"] } }] },
+        { "name": "Set Voice Presence", "request": { "method": "PUT", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"channel_id\": {{channelId}}\n}" }, "url": "{{baseUrl}}/voice/presence" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 204', () => pm.response.to.have.status(204));"] } }] },
+        { "name": "Clear Voice Presence", "request": { "method": "PUT", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"channel_id\": null\n}" }, "url": "{{baseUrl}}/voice/presence" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 204', () => pm.response.to.have.status(204));"] } }] }
       ]
     }
   ]

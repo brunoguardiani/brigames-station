@@ -24,6 +24,17 @@ type Service struct {
 }
 
 func New(pool *pgxpool.Pool, cfg config.LiveKitConfig) *Service { return &Service{pool, cfg} }
+func (s *Service) AuthorizeChannel(ctx context.Context, userID, channelID int64) (int64, error) {
+	var serverID int64
+	err := s.pool.QueryRow(ctx, "SELECT channels.server_id FROM channels JOIN server_memberships ON server_memberships.server_id=channels.server_id WHERE channels.id=$1 AND channels.type='voice' AND server_memberships.user_id=$2", channelID, userID).Scan(&serverID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("authorize voice channel: %w", err)
+	}
+	return serverID, nil
+}
 func (s *Service) Join(ctx context.Context, userID, channelID int64) (Join, error) {
 	var room, username string
 	err := s.pool.QueryRow(ctx, "SELECT 'server-' || channels.server_id || '-channel-' || channels.id, users.username FROM channels JOIN server_memberships ON server_memberships.server_id=channels.server_id JOIN users ON users.id=server_memberships.user_id WHERE channels.id=$1 AND channels.type='voice' AND server_memberships.user_id=$2", channelID, userID).Scan(&room, &username)

@@ -41,7 +41,17 @@ func realtimeHandler(hub *realtime.Hub, tokens *auth.TokenManager, serverService
 			publishPresence(r.Context(), hub, serverService, claims.Subject, true)
 		}
 		defer func() {
-			if unregister() && serverService != nil {
+			result := unregister()
+			if serverService == nil {
+				return
+			}
+			if result.VoicePresence != nil {
+				memberIDs, err := serverService.MemberIDs(context.Background(), result.VoicePresence.ServerID)
+				if err == nil {
+					publishVoicePresenceChange(hub, memberIDs, result.VoicePresence.ServerID, claims.Subject, nil)
+				}
+			}
+			if result.WentOffline {
 				publishPresence(context.Background(), hub, serverService, claims.Subject, false)
 			}
 		}()

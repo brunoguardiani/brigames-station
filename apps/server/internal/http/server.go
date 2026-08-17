@@ -25,7 +25,7 @@ func NewHandler(pool *pgxpool.Pool, identityService *identity.Service, tokenMana
 	registerMessageRoutes(router, messageService, tokenManager, hub)
 	registerInviteRoutes(router, inviteService, tokenManager)
 	if voiceService != nil {
-		registerVoiceRoutes(router, voiceService, tokenManager)
+		registerVoiceRoutes(router, voiceService, tokenManager, serverService, hub)
 	}
 	router.GET("/ws", gin.WrapF(realtimeHandler(hub, tokenManager, serverService)))
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, nativeImage, safeStorage } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, nativeImage, safeStorage } from 'electron';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 
@@ -9,6 +9,7 @@ let accessToken: string | undefined;
 let realtimeSocket: WebSocket | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let reconnectDelayMilliseconds = 1_000;
+let selectedDisplaySourceID: string | undefined;
 
 function desktopAssetPath(filename: string): string {
   const candidates = [
@@ -37,10 +38,12 @@ function isTrustedRendererURL(url: string): boolean {
 type User = { username: string; email: string; role: string };
 type Tokens = { access_token: string; refresh_token: string };
 type Server = { id: number; name: string; description: string; created_by: number; membership_role: 'owner' | 'member'; created_at: string };
-type ServerMember = { id: number; username: string; role: 'owner' | 'member'; online: boolean };
+type ServerMember = { id: number; username: string; role: 'owner' | 'member'; online: boolean; voice_channel_id: number | null };
 type Channel = { id: number; server_id: number; name: string; type: 'text' | 'voice'; position: number; created_by: number; created_at: string };
 type Message = { id: number; channel_id: number; author_id: number; author_username: string; content: string; created_at: string };
 type MessagePage = { messages: Message[]; next_before: number | null };
+type DisplaySource = { id: string; name: string; thumbnail: string };
+type VoicePresenceChanged = { server_id: number; user_id: number; channel_id: number | null };
 
 function realtimeURL(): string {
   return backendURL.replace(/^http/, 'ws') + '/ws';
@@ -75,7 +78,7 @@ function connectRealtime(): void {
   socket.addEventListener('message', (event) => {
     if (realtimeSocket !== socket || typeof event.data !== 'string') return;
     try {
-      const message = JSON.parse(event.data) as { type?: string; data?: Message };
+      const message = JSON.parse(event.data) as { type?: string; data?: Message | VoicePresenceChanged };
       if (message.type === 'authenticated') {
         reconnectDelayMilliseconds = 1_000;
         sendToRenderers('realtime:connected');
@@ -83,6 +86,8 @@ function connectRealtime(): void {
         sendToRenderers('realtime:message-created', message.data);
       } else if (message.type === 'presence.changed' && message.data) {
         sendToRenderers('realtime:presence-changed', message.data);
+      } else if (message.type === 'voice.presence.changed' && message.data) {
+        sendToRenderers('realtime:voice-presence-changed', message.data);
       }
     } catch { /* Ignore invalid realtime payloads. */ }
   });
@@ -122,7 +127,7 @@ async function authenticate(pathname: string, body: Record<string, string>): Pro
 	connectRealtime();
 	return await userResponse.json() as User;
 }
-async function authenticatedRequest<T>(pathname: string, method = 'GET', body?: Record<string, string>): Promise<T> {
+async function authenticatedRequest<T>(pathname: string, method = 'GET', body?: Record<string, unknown>): Promise<T> {
   if (!accessToken) throw new Error('No active session.');
   const response = await fetch(backendURL + pathname, {
     method,
@@ -185,7 +190,22 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
     },
   });
   window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
-    callback(permission === 'media' && isTrustedRendererURL(webContents.getURL()));
+    callback((permission === 'media' || permission === 'display-capture') && isTrustedRendererURL(webContents.getURL()));
+  });
+  window.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
+    const sourceID = selectedDisplaySourceID;
+    selectedDisplaySourceID = undefined;
+    if (!sourceID) {
+      callback({});
+      return;
+    }
+
+    void desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } })
+      .then((sources) => {
+        const source = sources.find((item) => item.id === sourceID);
+        callback(source ? { video: source, ...(request.audioRequested && process.platform === 'win32' ? { audio: 'loopback' } : {}) } : {});
+      })
+      .catch(() => callback({}));
   });
   window.once('ready-to-show', () => onReady(window));
 
@@ -265,6 +285,21 @@ ipcMain.handle('servers:leave', (_event, serverID: unknown): Promise<void> => {
 ipcMain.handle('messages:list', (_event, channelID: unknown): Promise<MessagePage> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0) throw new Error('Invalid channel ID.'); return authenticatedRequest<MessagePage>('/channels/' + channelID + '/messages'); });
 ipcMain.handle('messages:create', (_event, channelID: unknown, content: unknown): Promise<Message> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0 || typeof content !== 'string') throw new Error('Invalid message input.'); return authenticatedRequest<Message>('/channels/' + channelID + '/messages', 'POST', { content }); });
 ipcMain.handle('voice:join', (_event, channelID: unknown): Promise<{ url: string; token: string; room: string }> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0) throw new Error('Invalid voice channel ID.'); return authenticatedRequest('/voice/channels/' + channelID + '/token', 'POST'); });
+ipcMain.handle('voice:set-presence', (_event, channelID: unknown): Promise<void> => {
+  if (channelID !== null && (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0)) throw new Error('Invalid voice channel ID.');
+  return authenticatedRequest<void>('/voice/presence', 'PUT', { channel_id: channelID as number | null });
+});
+ipcMain.handle('screen-share:list-sources', async (event): Promise<DisplaySource[]> => {
+  if (!isTrustedRendererURL(event.sender.getURL())) throw new Error('Untrusted screen-share request.');
+  const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } });
+  return sources.map((source) => ({ id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() }));
+});
+ipcMain.handle('screen-share:select-source', async (event, sourceID: unknown): Promise<void> => {
+  if (!isTrustedRendererURL(event.sender.getURL()) || typeof sourceID !== 'string' || !sourceID) throw new Error('Invalid screen-share source.');
+  const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 1, height: 1 } });
+  if (!sources.some((source) => source.id === sourceID)) throw new Error('Screen-share source is no longer available.');
+  selectedDisplaySourceID = sourceID;
+});
 ipcMain.handle('invites:create', (_event, serverID: unknown): Promise<{ code: string; expires_at: string }> => { if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.'); return authenticatedRequest('/servers/' + serverID + '/invites', 'POST'); });
 ipcMain.handle('invites:create-and-copy', async (_event, serverID: unknown): Promise<{ code: string; expires_at: string }> => {
   if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.');

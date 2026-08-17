@@ -270,11 +270,19 @@ realtime hub appropriate for the current deployment model.
 - [x] Indicate the active speaker with a green ring around their avatar.
 - [x] Add compact microphone mute and call-leave controls above the account
   logout area.
+- [x] Track each connected member's current voice channel through the
+  authenticated `PUT /voice/presence` endpoint.
+- [x] Display participants beneath every voice channel, including for members
+  who are not connected to that channel.
+- [x] Publish voice-channel assignment changes through the realtime
+  `voice.presence.changed` event.
 
 ### Operational Limits
 
 - Presence reflects authenticated WebSocket connections in the current Go
   process; it is not durable and is not shared between backend instances.
+- Voice-channel presence is also in-process and non-durable; it is cleared on
+  disconnect and is not shared between backend instances.
 - Redis, distributed fan-out, and cross-instance presence remain out of scope.
 
 ### Acceptance Criteria
@@ -282,7 +290,9 @@ realtime hub appropriate for the current deployment model.
 - [x] Only a server member can list the members of that server.
 - [x] Members sharing a server receive online/offline updates without polling.
 - [x] The desktop visibly distinguishes online from offline members.
-- [x] Voice participants and active speakers are visible in the desktop UI.
+- [x] Voice participants are visible beneath every voice channel and their
+  assignments update through realtime events.
+- [x] Active speakers are visible in the desktop UI.
 - [x] A connected user can mute/unmute their microphone and leave a call using
   icon-only controls.
 

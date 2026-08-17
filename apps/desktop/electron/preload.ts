@@ -21,7 +21,14 @@ contextBridge.exposeInMainWorld('desktop', {
     create: (serverID: number, name: string, type: 'text' | 'voice') => ipcRenderer.invoke('channels:create', serverID, name, type),
   },
   messages: { list: (channelID: number) => ipcRenderer.invoke('messages:list', channelID), create: (channelID: number, content: string) => ipcRenderer.invoke('messages:create', channelID, content) },
-  voice: { join: (channelID: number) => ipcRenderer.invoke('voice:join', channelID) },
+  voice: {
+    join: (channelID: number) => ipcRenderer.invoke('voice:join', channelID),
+    setPresence: (channelID: number | null) => ipcRenderer.invoke('voice:set-presence', channelID),
+  },
+  screenShare: {
+    listSources: () => ipcRenderer.invoke('screen-share:list-sources'),
+    selectSource: (sourceID: string) => ipcRenderer.invoke('screen-share:select-source', sourceID),
+  },
   invites: { create: (serverID: number) => ipcRenderer.invoke('invites:create', serverID), createAndCopy: (serverID: number) => ipcRenderer.invoke('invites:create-and-copy', serverID), join: (code: string) => ipcRenderer.invoke('invites:join', code) },
   realtime: {
     onConnected: (callback: () => void): (() => void) => {
@@ -38,6 +45,11 @@ contextBridge.exposeInMainWorld('desktop', {
       const listener = (_event: Electron.IpcRendererEvent, presence: unknown) => callback(presence);
       ipcRenderer.on('realtime:presence-changed', listener);
       return () => ipcRenderer.removeListener('realtime:presence-changed', listener);
+    },
+    onVoicePresenceChanged: (callback: (presence: unknown) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, presence: unknown) => callback(presence);
+      ipcRenderer.on('realtime:voice-presence-changed', listener);
+      return () => ipcRenderer.removeListener('realtime:voice-presence-changed', listener);
     },
   },
 });

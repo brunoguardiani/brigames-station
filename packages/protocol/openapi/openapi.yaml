@@ -359,6 +359,27 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/VoiceChannelNotFound' }
+  /voice/presence:
+    put:
+      summary: Set or clear the caller's current voice-channel presence
+      description: >-
+        Updates the caller's in-process voice-channel presence. A channel ID
+        marks the caller as connected to that voice channel; null clears the
+        current assignment. Changes are delivered to server members through
+        the `voice.presence.changed` realtime event.
+      operationId: updateVoicePresence
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVoicePresenceRequest'
+      responses:
+        '204': { description: Voice-channel presence updated. }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/VoiceChannelNotFound' }
 components:
   securitySchemes:
     bearerAuth:
@@ -606,12 +627,17 @@ components:
           format: date-time
     ServerMember:
       type: object
-      required: [id, username, role, online]
+      required: [id, username, role, online, voice_channel_id]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
         role: { type: string, enum: [owner, member] }
         online: { type: boolean }
+        voice_channel_id:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: Current in-process voice channel, or null when not connected.
     Invite:
       type: object
       required: [id, server_id, code, expires_at]
@@ -655,3 +681,12 @@ components:
         room:
           type: string
           description: Opaque room name derived from the server and voice channel.
+    UpdateVoicePresenceRequest:
+      type: object
+      required: [channel_id]
+      properties:
+        channel_id:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+          description: Voice channel to join, or null to clear the current presence.

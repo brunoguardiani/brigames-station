@@ -24,12 +24,20 @@ interface Window {
       create(serverID: number, name: string, type: 'text' | 'voice'): Promise<Channel>;
     };
     messages: { list(channelID: number): Promise<MessagePage>; create(channelID: number, content: string): Promise<Message>; };
-    voice: { join(channelID: number): Promise<{ url: string; token: string; room: string }>; };
+    voice: {
+      join(channelID: number): Promise<{ url: string; token: string; room: string }>;
+      setPresence(channelID: number | null): Promise<void>;
+    };
+    screenShare: {
+      listSources(): Promise<Array<{ id: string; name: string; thumbnail: string }>>;
+      selectSource(sourceID: string): Promise<void>;
+    };
     invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; createAndCopy(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
     realtime: {
       onConnected(callback: () => void): () => void;
       onMessageCreated(callback: (message: Message) => void): () => void;
       onPresenceChanged(callback: (presence: { user_id: number; online: boolean }) => void): () => void;
+      onVoicePresenceChanged(callback: (presence: { server_id: number; user_id: number; channel_id: number | null }) => void): () => void;
     };
   };
 }
@@ -54,4 +62,4 @@ interface Channel {
 }
 interface Message { id: number; channel_id: number; author_id: number; author_username: string; content: string; created_at: string; }
 interface MessagePage { messages: Message[]; next_before: number | null; }
-interface ServerMember { id: number; username: string; role: 'owner' | 'member'; online: boolean; }
+interface ServerMember { id: number; username: string; role: 'owner' | 'member'; online: boolean; voice_channel_id: number | null; }

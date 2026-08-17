@@ -138,6 +138,26 @@ func (service *Service) SharedMemberIDs(ctx context.Context, userID int64) ([]in
 	return ids, rows.Err()
 }
 
+func (service *Service) MemberIDs(ctx context.Context, serverID int64) ([]int64, error) {
+	rows, err := service.pool.Query(ctx, "SELECT user_id FROM server_memberships WHERE server_id = $1 ORDER BY user_id", serverID)
+	if err != nil {
+		return nil, fmt.Errorf("list server member IDs: %w", err)
+	}
+	defer rows.Close()
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan server member ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate server member IDs: %w", err)
+	}
+	return ids, nil
+}
+
 func (service *Service) CreateChannel(ctx context.Context, userID, serverID int64, name, channelType string) (Channel, error) {
 	name, err := validateChannelName(name)
 	if err != nil {
