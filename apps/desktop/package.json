@@ -3,7 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "description": "brigames-station desktop application.",
-  "author": "Bruno Guardiani",
+  "author": {
+    "name": "Bruno Guardiani",
+    "email": "brunodipaolo12@gmail.com"
+  },
+  "homepage": "https://github.com/brunoguardiani/brigames-station",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brunoguardiani/brigames-station.git"
+  },
   "desktopName": "brigames-station.desktop",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -100,6 +108,7 @@
       ],
       "icon": "src/assets/brigames-station-icon.png",
       "category": "Network;Chat;InstantMessaging",
+      "maintainer": "Bruno Guardiani <brunodipaolo12@gmail.com>",
       "syncDesktopName": true,
       "artifactName": "brigames-station-${version}-${arch}.${ext}"
     }
