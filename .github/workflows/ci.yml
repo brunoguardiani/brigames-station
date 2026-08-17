@@ -91,6 +91,32 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  desktop-linux:
+    name: Linux packages
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @brigames-station/desktop run dist:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brigames-station-linux-x64
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
   compose:
     name: Production Compose configuration
     runs-on: ubuntu-latest

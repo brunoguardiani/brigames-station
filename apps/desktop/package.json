@@ -1,6 +1,6 @@
 {
   "name": "@brigames-station/desktop",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "private": true,
   "description": "brigames-station desktop application.",
   "author": "Bruno Guardiani",
@@ -11,7 +11,8 @@
     "electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js",
     "dist:win": "pnpm run build && electron-builder --win nsis --x64",
     "prepare:mac-icon": "sh scripts/create-macos-icon.sh",
-    "dist:mac": "pnpm run build && pnpm run prepare:mac-icon && electron-builder --mac dmg --x64 --arm64"
+    "dist:mac": "pnpm run build && pnpm run prepare:mac-icon && electron-builder --mac dmg --x64 --arm64",
+    "dist:linux": "pnpm run build && electron-builder --linux AppImage deb --x64"
   },
   "dependencies": {
     "@angular/common": "22.1.2",
@@ -83,6 +84,21 @@
       "extendInfo": {
         "NSMicrophoneUsageDescription": "O brigames-station usa o microfone para canais de voz."
       }
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "src/assets/brigames-station-icon.png",
+      "category": "Network;Chat;InstantMessaging",
+      "artifactName": "brigames-station-${version}-${arch}.${ext}"
     }
   }
 }

@@ -96,9 +96,46 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  linux:
+    name: Linux x64 packages
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @brigames-station/desktop run dist:linux
+      - name: Create SHA-256 checksums
+        shell: bash
+        run: |
+          shopt -s nullglob
+          installers=(apps/desktop/release/*.AppImage apps/desktop/release/*.deb)
+          test "${#installers[@]}" -gt 0
+          for installer in "${installers[@]}"; do
+            checksum=$(sha256sum "$installer" | awk '{print $1}')
+            printf '%s  %s\n' "$checksum" "$(basename "$installer")" > "$installer.sha256"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brigames-station-linux-${{ needs.version.outputs.value }}
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.AppImage.sha256
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.deb.sha256
+          if-no-files-found: error
+          retention-days: 90
+
   release:
     name: Publish private GitHub Release
-    needs: [version, windows, macos]
+    needs: [version, windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

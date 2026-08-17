@@ -248,8 +248,10 @@ operational limits are documented in [`phase-6-voice.md`](./phase-6-voice.md).
 
 ### Deferred Scope
 
-- Video, screen sharing, recording, and device selection.
-- Public deployment, TLS, TURN configuration, and production LiveKit secrets.
+- Transferred to and completed in Phase 9: video and screen sharing.
+- Transferred to and completed in Phase 8: public deployment, TLS, and
+  production LiveKit secrets.
+- Recording, device selection, and TURN configuration remain deferred.
 
 ## Phase 7 — Presence and Voice Controls
 
@@ -316,3 +318,105 @@ Its active design is documented in [`phase-8-remote.md`](./phase-8-remote.md).
   required TCP/UDP ports. TURN remains a future connectivity enhancement.
 - [x] Build and validate the desktop against the remote HTTPS/WSS endpoints.
 - [x] Document backups, upgrades, monitoring, rollback, and TLS renewal.
+
+## Phase 9 - Video and Screen Sharing
+
+Phase 9 is complete. It extends the existing LiveKit media plane beyond voice
+without changing the Go backend into a media proxy.
+
+### Delivered Scope
+
+- [x] Publish and receive LiveKit camera tracks from the Electron desktop app.
+- [x] Select an Electron screen or window source through the typed preload
+  boundary and publish it as a LiveKit screen-share track.
+- [x] Offer optional system-audio sharing on Windows when the selected source
+  and operating system support it.
+- [x] Render camera and screen-share tracks in an adaptive, contained media
+  stage that does not overflow the application window.
+- [x] Let each viewer click a track to feature it, then click it again to
+  return all active tracks to an equal grid.
+- [x] Keep voice controls available while the media stage is open and hide the
+  right-side member panel only while viewing media.
+- [x] Add a local indicator beside the voice channel when its media stage is
+  actively being viewed.
+- [x] Allow Enter to send a text-channel message while Shift+Enter retains a
+  multiline message.
+
+### Acceptance Criteria
+
+- [x] A member can publish and stop a camera or a selected screen/window while
+  connected to a voice channel.
+- [x] Other members in the same LiveKit room receive the published tracks.
+- [x] A viewer can feature and unfeature an individual camera or shared screen
+  without affecting another viewer's layout.
+- [x] Media remains contained within the available desktop viewport.
+- [x] Returning to a text channel hides the media stage and restores the text
+  chat view.
+
+### Deferred Scope
+
+- Recording, device selection, virtual backgrounds, moderation controls, and
+  bandwidth-quality controls.
+- TURN relay and broader network-connectivity hardening.
+
+## Phase 10 - Remote Media Reliability
+
+Phase 10 is the next planned phase. Its purpose is to make the already
+delivered voice, camera, and screen-sharing experience reliable for users on
+different networks, including restrictive NATs.
+
+### Proposed Scope
+
+- Add and configure a TURN relay compatible with the single-node LiveKit
+  deployment, including restricted relay ports and credentials held only in
+  production environment variables.
+- Test voice, camera, screen sharing, and system audio from at least two
+  distinct external networks, not only two clients on the same LAN.
+- Surface clear desktop connection and media-permission errors for microphone,
+  camera, and screen sharing.
+- Document the production firewall, DNS, TLS, credential rotation, and
+  rollback procedure for the media relay.
+
+### Explicitly Out of Scope
+
+- Recording, multi-instance LiveKit, Redis, and distributed presence.
+- Automatic desktop updates and mobile clients.
+
+## Phase 11 - Linux Desktop Distribution
+
+Phase 11 is in progress. It extends the existing Windows and macOS release process
+to Linux desktop users while retaining the same explicit, manually approved
+release workflow.
+
+### Delivered Configuration
+
+- [x] Add a Linux runner to CI when desktop files change and to the manually
+  approved desktop-release workflow.
+- [x] Generate and publish the Linux desktop artifacts alongside the existing
+  private GitHub Release assets.
+- [x] Start with broadly compatible Linux packages: an AppImage and a Debian
+  package (`.deb`).
+- [x] Produce SHA-256 checksum files for each Linux artifact, as for the current
+  Windows and macOS installers.
+
+### Remaining Verification
+
+- [ ] Run the CI Linux packaging job and inspect its AppImage and `.deb`
+  artifacts.
+- [ ] Run a manually approved desktop release and confirm the Linux assets and
+  checksums are attached to the private GitHub Release.
+- [ ] Document installation, launch, update, and uninstall steps on Pop!_OS.
+
+### Decisions Required Before Implementation
+
+- Confirm the supported CPU architecture for the first release: `x64` only is
+  recommended; ARM64 can be added later when there is a real user need.
+- Confirm whether unsigned Linux packages are acceptable initially. AppImage
+  and `.deb` packages can be distributed without a code-signing certificate,
+  but users may receive a trust warning depending on their distribution.
+
+### Explicitly Out of Scope
+
+- Automatic in-app updates.
+- Distribution through Snap Store, Flathub, or other public package stores.
+- Mobile clients.

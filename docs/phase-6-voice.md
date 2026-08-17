@@ -36,5 +36,7 @@ microphone and joins automatically. Use the `Sair de <canal>` button to leave.
   audio playback.
 - Transferred to and completed in Phase 7: mute UI, voice-participant display,
   active-speaker indication, and server-member presence.
-- Deliberately deferred: video, screen sharing, device selection, recording,
-  TURN configuration, and multi-instance operational infrastructure.
+- Transferred to and completed in Phase 9: camera publishing, screen sharing,
+  optional system-audio sharing on Windows, and the media-stage desktop UI.
+- Deliberately deferred: device selection, recording, TURN configuration, and
+  multi-instance operational infrastructure.
