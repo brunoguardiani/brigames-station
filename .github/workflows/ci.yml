@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Go server
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/server
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - run: go test ./...
+      - run: go vet ./...
+      - run: go build ./cmd/api ./cmd/migrate ./cmd/seed-owner
+
+  desktop:
+    name: Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @brigames-station/desktop run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brigames-station-windows-x64
+          path: |
+            apps/desktop/release/brigames-station-Setup-*.exe
+            !apps/desktop/release/*.__uninstaller.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  compose:
+    name: Production Compose configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate production Compose overlays
+        env:
+          ENV_FILE: .env.production.example
+        run: docker compose -f docker-compose.production.yml -f docker-compose.tls.yml -f docker-compose.livekit.yml config -q

@@ -116,6 +116,29 @@ docker compose -f docker-compose.production.yml -f docker-compose.tls.yml -f doc
 Do not roll back a database schema unless the associated migration has an
 explicit reverse migration and the release plan permits it.
 
+### GitHub Actions
+
+`.github/workflows/ci.yml` runs on pushes and pull requests. It tests and
+vets the Go server, builds the Windows installer, uploads that installer as a
+14-day workflow artifact, and validates the production Compose overlays. It
+never connects to the VPS.
+
+`.github/workflows/deploy-production.yml` is dispatch-only. It checks out the
+selected ref, resolves it to an immutable commit, and deploys only after the
+GitHub `production` environment authorizes the run. Configure required
+reviewers for that environment before using it.
+
+Create these environment-scoped GitHub Secrets for the deploy workflow:
+
+- `VPS_HOST`: Lightsail public IP or host name.
+- `VPS_USER`: the restricted Linux deployment user.
+- `VPS_SSH_PRIVATE_KEY`: a dedicated GitHub Actions private key. Add only its
+  public key to that user's `~/.ssh/authorized_keys` on the VPS; do not reuse a
+  personal SSH key.
+- `VPS_SSH_KNOWN_HOSTS`: the verified `known_hosts` line for the VPS, obtained
+  from a trusted connection. This prevents the workflow from trusting an
+  arbitrary host key at deploy time.
+
 ## Operational Rules
 
 - Never commit `.env.production`, database credentials, JWT secrets, or
