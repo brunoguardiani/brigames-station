@@ -18,10 +18,10 @@
     "build": "ng build && tsc -p electron/tsconfig.json",
     "serve": "ng serve --host 127.0.0.1 --port 4200",
     "electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js",
-    "dist:win": "pnpm run build && electron-builder --win nsis --x64",
+    "dist:win": "pnpm run build && electron-builder --win nsis --x64 --publish never",
     "prepare:mac-icon": "sh scripts/create-macos-icon.sh",
-    "dist:mac": "pnpm run build && pnpm run prepare:mac-icon && electron-builder --mac dmg --x64 --arm64",
-    "dist:linux": "pnpm run build && electron-builder --linux AppImage deb --x64"
+    "dist:mac": "pnpm run build && pnpm run prepare:mac-icon && electron-builder --mac dmg --x64 --arm64 --publish never",
+    "dist:linux": "pnpm run build && electron-builder --linux AppImage deb --x64 --publish never"
   },
   "dependencies": {
     "@angular/common": "22.1.2",
