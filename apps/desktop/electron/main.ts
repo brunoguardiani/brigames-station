@@ -167,12 +167,16 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
     show: false,
     backgroundColor: '#14161d',
     icon: appIconPath(),
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#14161d',
-      symbolColor: '#f3f4f8',
-      height: 40,
-    },
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const }
+      : {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: {
+            color: '#14161d',
+            symbolColor: '#f3f4f8',
+            height: 40,
+          },
+        }),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

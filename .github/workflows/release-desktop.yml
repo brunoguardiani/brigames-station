@@ -1,0 +1,118 @@
+name: Release desktop applications
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Read release version
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - id: version
+        run: |
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          case "$version" in
+            [0-9]*.[0-9]*.[0-9]* | [0-9]*.[0-9]*.[0-9]*-*) ;;
+            *) echo "Invalid desktop version: $version" >&2; exit 1 ;;
+          esac
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: Windows x64 installer
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @brigames-station/desktop run dist:win
+      - name: Create SHA-256 checksum
+        shell: pwsh
+        run: |
+          $installer = Get-Item "apps/desktop/release/brigames-station-Setup-${{ needs.version.outputs.value }}.exe"
+          $checksum = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$checksum  $($installer.Name)" | Set-Content -LiteralPath "$($installer.FullName).sha256" -NoNewline
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brigames-station-windows-${{ needs.version.outputs.value }}
+          path: |
+            apps/desktop/release/brigames-station-Setup-${{ needs.version.outputs.value }}.exe
+            apps/desktop/release/brigames-station-Setup-${{ needs.version.outputs.value }}.exe.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+  macos:
+    name: macOS Apple Silicon and Intel installers
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @brigames-station/desktop run dist:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Create SHA-256 checksums
+        shell: bash
+        run: |
+          for installer in apps/desktop/release/*.dmg; do
+            checksum=$(shasum -a 256 "$installer" | awk '{print $1}')
+            printf '%s  %s\n' "$checksum" "$(basename "$installer")" > "$installer.sha256"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brigames-station-macos-${{ needs.version.outputs.value }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.dmg.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+  release:
+    name: Publish private GitHub Release
+    needs: [version, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+      - name: Create private GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.version.outputs.value }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          find release-artifacts -type f -print
+          gh release create "v$RELEASE_VERSION" release-artifacts/* \
+            --target "$RELEASE_SHA" \
+            --title "brigames-station v$RELEASE_VERSION" \
+            --generate-notes

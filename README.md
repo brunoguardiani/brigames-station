@@ -131,6 +131,22 @@ The first public builds are not code signed, so Windows may display an
 "unknown publisher" warning. Distribute the installer only through a trusted
 channel and provide its SHA-256 checksum alongside the file.
 
+## Create a desktop release
+
+Releases are manual and never run on `push`. First update the `version` in
+`apps/desktop/package.json`, commit it, and wait for the CI on `main` to pass.
+Then open **Actions → Release desktop applications → Run workflow** while `main`
+is selected. The workflow creates a private GitHub Release with:
+
+- the Windows x64 installer and SHA-256 checksum;
+- macOS Apple Silicon (`arm64`) and Intel (`x64`) DMG installers, each with a
+  SHA-256 checksum.
+
+Download the correct installer and checksum from the Release and distribute
+them through a trusted channel. The macOS builds are not yet signed or
+notarized, so they are intended for controlled testing until Apple Developer
+signing is configured.
+
 For Angular development with live reload, use two terminals. Start the Angular
 development server in the first:
 

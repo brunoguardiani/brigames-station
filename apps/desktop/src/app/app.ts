@@ -9,6 +9,7 @@ type User = { username: string; email: string; role: string };
   selector: 'app-root', changeDetection: ChangeDetectionStrategy.OnPush, imports: [FormsModule], templateUrl: './app.html', styleUrl: './app.css',
 })
 export class AppComponent implements OnInit, OnDestroy {
+  protected readonly macOS = navigator.userAgent.includes('Macintosh');
   protected readonly status = signal<BackendState>('checking');
   protected readonly user = signal<User | null>(null);
   protected readonly servers = signal<Server[]>([]);
@@ -32,6 +33,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private removeRealtimePresenceListener?: () => void;
   private voiceRoom?: Room;
   private voiceAudioElements: HTMLAudioElement[] = [];
+  private voiceAudioContext?: AudioContext;
 
   ngOnInit(): void {
     void this.refreshBackendStatus();
@@ -107,14 +109,79 @@ export class AppComponent implements OnInit, OnDestroy {
   protected async joinVoiceChannel(channel: Channel): Promise<void> {
     if (this.voiceChannel()?.id === channel.id) return;
     await this.leaveVoiceChannel(); this.loading.set(true); this.error.set('');
-    try { const session = await window.desktop.voice.join(channel.id); const room = new Room(); const refreshParticipants = () => this.voiceParticipants.set([{ identity: room.localParticipant.identity, name: room.localParticipant.name || room.localParticipant.identity }, ...Array.from(room.remoteParticipants.values()).map((participant) => ({ identity: participant.identity, name: participant.name || participant.identity }))]); room.on(RoomEvent.TrackSubscribed, (track) => { if (track.kind === Track.Kind.Audio) { const audio = track.attach(); document.body.appendChild(audio); this.voiceAudioElements.push(audio); } }); room.on(RoomEvent.ParticipantConnected, refreshParticipants); room.on(RoomEvent.ParticipantDisconnected, refreshParticipants); room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => this.activeSpeakerIDs.set(speakers.map((speaker) => speaker.identity))); room.on(RoomEvent.Disconnected, () => { this.voiceRoom = undefined; this.voiceChannel.set(null); this.voiceParticipants.set([]); this.activeSpeakerIDs.set([]); this.removeVoiceAudio(); }); await room.connect(session.url, session.token); await room.localParticipant.setMicrophoneEnabled(true); this.voiceRoom = room; this.voiceChannel.set(channel); refreshParticipants(); }
+    try {
+      const session = await window.desktop.voice.join(channel.id);
+      const room = new Room();
+      const toVoiceParticipant = (participant: { identity: string; name?: string; isMicrophoneEnabled: boolean }): VoiceParticipant => ({
+        identity: participant.identity,
+        name: participant.name || participant.identity,
+        muted: !participant.isMicrophoneEnabled,
+      });
+      const refreshParticipants = () => this.voiceParticipants.set([
+        toVoiceParticipant(room.localParticipant),
+        ...Array.from(room.remoteParticipants.values()).map(toVoiceParticipant),
+      ]);
+
+      room.on(RoomEvent.TrackSubscribed, (track) => {
+        if (track.kind === Track.Kind.Audio) {
+          const audio = track.attach();
+          document.body.appendChild(audio);
+          this.voiceAudioElements.push(audio);
+        }
+      });
+      room.on(RoomEvent.ParticipantConnected, () => {
+        refreshParticipants();
+        if (this.voiceRoom === room) this.playVoiceSound('join');
+      });
+      room.on(RoomEvent.ParticipantDisconnected, () => {
+        refreshParticipants();
+        if (this.voiceRoom === room) this.playVoiceSound('leave');
+      });
+      room.on(RoomEvent.TrackMuted, refreshParticipants);
+      room.on(RoomEvent.TrackUnmuted, refreshParticipants);
+      room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => this.activeSpeakerIDs.set(speakers.map((speaker) => speaker.identity)));
+      room.on(RoomEvent.Disconnected, () => {
+        this.voiceRoom = undefined;
+        this.voiceChannel.set(null);
+        this.voiceParticipants.set([]);
+        this.activeSpeakerIDs.set([]);
+        this.removeVoiceAudio();
+      });
+
+      await room.connect(session.url, session.token);
+      await room.localParticipant.setMicrophoneEnabled(true);
+      this.voiceRoom = room;
+      this.voiceChannel.set(channel);
+      refreshParticipants();
+      this.playVoiceSound('join');
+    }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to join voice channel.')); }
     finally { this.loading.set(false); }
   }
-  protected async leaveVoiceChannel(): Promise<void> { const room=this.voiceRoom; this.voiceRoom=undefined; this.voiceChannel.set(null); this.voiceParticipants.set([]); this.activeSpeakerIDs.set([]); this.microphoneMuted.set(false); this.removeVoiceAudio(); if (room) await room.disconnect(); }
-  protected async toggleMicrophone(): Promise<void> { if (!this.voiceRoom) return; const muted = !this.microphoneMuted(); await this.voiceRoom.localParticipant.setMicrophoneEnabled(!muted); this.microphoneMuted.set(muted); }
+  protected async leaveVoiceChannel(): Promise<void> { const room=this.voiceRoom; this.voiceRoom=undefined; this.voiceChannel.set(null); this.voiceParticipants.set([]); this.activeSpeakerIDs.set([]); this.microphoneMuted.set(false); this.removeVoiceAudio(); if (room) { this.playVoiceSound('leave'); await room.disconnect(); } }
+  protected async toggleMicrophone(): Promise<void> { if (!this.voiceRoom) return; const muted = !this.microphoneMuted(); await this.voiceRoom.localParticipant.setMicrophoneEnabled(!muted); this.microphoneMuted.set(muted); this.playVoiceSound(muted ? 'mute' : 'unmute'); }
   protected isSpeaking(participant: VoiceParticipant): boolean { return this.activeSpeakerIDs().includes(participant.identity); }
   private removeVoiceAudio(): void { for (const audio of this.voiceAudioElements) audio.remove(); this.voiceAudioElements = []; }
+  private playVoiceSound(event: 'join' | 'leave' | 'mute' | 'unmute'): void {
+    const context = this.voiceAudioContext ??= new AudioContext();
+    const notes = event === 'join' ? [523, 659] : event === 'leave' ? [440, 330] : event === 'mute' ? [330] : [523];
+    const startedAt = context.currentTime;
+
+    if (context.state === 'suspended') void context.resume();
+    notes.forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const offset = index * 0.09;
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, startedAt + offset);
+      gain.gain.setValueAtTime(0.0001, startedAt + offset);
+      gain.gain.exponentialRampToValueAtTime(0.08, startedAt + offset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startedAt + offset + 0.12);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start(startedAt + offset);
+      oscillator.stop(startedAt + offset + 0.13);
+    });
+  }
   protected async sendMessage(): Promise<void> { const channel = this.selectedChannel(); if (!channel) return; this.loading.set(true); try { await window.desktop.messages.create(channel.id, this.messageContent); this.messageContent = ''; await this.selectChannel(channel); } catch (error) { this.error.set(this.messageFor(error, 'Unable to send message.')); } finally { this.loading.set(false); } }
   protected async createInvite(): Promise<void> { const server=this.selectedServer(); if(!server)return; try { this.createdInvite=(await window.desktop.invites.createAndCopy(server.id)).code; } catch(error){this.error.set(this.messageFor(error,'Unable to create invite.'));} }
   protected async joinInvite(): Promise<void> { try { const joined=await window.desktop.invites.join(this.inviteCode); this.inviteCode=''; await this.loadServers(joined.server_id); } catch(error){this.error.set(this.messageFor(error,'Unable to join invite.'));} }
@@ -150,5 +217,5 @@ export class AppComponent implements OnInit, OnDestroy {
   private messageFor(error: unknown, fallback: string): string { return error instanceof Error ? error.message : fallback; }
 }
 
-type VoiceParticipant = { identity: string; name: string };
+type VoiceParticipant = { identity: string; name: string; muted: boolean };
 type ServerMember = { id: number; username: string; role: 'owner' | 'member'; online: boolean };

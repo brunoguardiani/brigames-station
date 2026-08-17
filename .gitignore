@@ -21,6 +21,7 @@ pnpm-debug.log*
 
 # Electron packaging and local runtime data
 release/
+apps/desktop/build/
 *.asar
 apps/desktop/.electron-user-*/
 .electron-user-*/
