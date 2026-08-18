@@ -6,9 +6,13 @@ const backendURL = process.env['DESKTOP_BACKEND_URL'] ?? (app.isPackaged ? 'http
 const backendHealthURL = backendURL + '/health';
 if (process.platform === 'win32') app.setAppUserModelId('com.brigames-station.desktop');
 let accessToken: string | undefined;
+let accessTokenExpiresAt: number | undefined;
 let realtimeSocket: WebSocket | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let reconnectDelayMilliseconds = 1_000;
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+let refreshInFlight: Promise<void> | undefined;
+let realtimeRefreshRequired = false;
 let selectedDisplaySourceID: string | undefined;
 
 function desktopAssetPath(filename: string): string {
@@ -36,7 +40,7 @@ function isTrustedRendererURL(url: string): boolean {
 }
 
 type User = { username: string; email: string; role: string };
-type Tokens = { access_token: string; refresh_token: string };
+type Tokens = { access_token: string; refresh_token: string; expires_in: number };
 type Server = { id: number; name: string; description: string; created_by: number; membership_role: 'owner' | 'member'; created_at: string };
 type ServerMember = { id: number; username: string; role: 'owner' | 'member'; online: boolean; voice_channel_id: number | null };
 type Channel = { id: number; server_id: number; name: string; type: 'text' | 'voice'; position: number; created_by: number; created_at: string };
@@ -45,19 +49,61 @@ type MessagePage = { messages: Message[]; next_before: number | null };
 type DisplaySource = { id: string; name: string; thumbnail: string };
 type VoicePresenceChanged = { server_id: number; user_id: number; channel_id: number | null };
 
+class SessionRefreshError extends Error {
+  constructor(message: string, readonly terminal: boolean) { super(message); }
+}
+
 function realtimeURL(): string {
   return backendURL.replace(/^http/, 'ws') + '/ws';
 }
 function sendToRenderers(channel: string, payload?: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, payload);
 }
+function clearRefreshTimer(): void {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = undefined;
+}
 function disconnectRealtime(): void {
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = undefined;
   reconnectDelayMilliseconds = 1_000;
+  realtimeRefreshRequired = false;
   const socket = realtimeSocket;
   realtimeSocket = undefined;
   socket?.close();
+}
+async function invalidateSession(): Promise<void> {
+  const hadActiveSession = accessToken !== undefined || accessTokenExpiresAt !== undefined;
+  accessToken = undefined;
+  accessTokenExpiresAt = undefined;
+  clearRefreshTimer();
+  disconnectRealtime();
+  await fs.rm(refreshTokenPath(), { force: true });
+  if (hadActiveSession) sendToRenderers('auth:session-expired');
+}
+function scheduleTokenRefresh(): void {
+  clearRefreshTimer();
+  if (!accessTokenExpiresAt) return;
+  const delay = Math.max(1_000, accessTokenExpiresAt - Date.now() - 60_000);
+  refreshTimer = setTimeout(() => {
+    void refreshAccessToken().catch((error) => {
+      if (error instanceof SessionRefreshError && error.terminal) {
+        void invalidateSession();
+        return;
+      }
+      scheduleTokenRefreshRetry();
+    });
+  }, delay);
+}
+function scheduleTokenRefreshRetry(): void {
+  clearRefreshTimer();
+  if (!accessToken) return;
+  refreshTimer = setTimeout(() => {
+    void refreshAccessToken().catch((error) => {
+      if (error instanceof SessionRefreshError && error.terminal) void invalidateSession();
+      else scheduleTokenRefreshRetry();
+    });
+  }, 30_000);
 }
 function scheduleRealtimeReconnect(): void {
   if (!accessToken || reconnectTimer) return;
@@ -68,18 +114,32 @@ function scheduleRealtimeReconnect(): void {
     connectRealtime();
   }, delay);
 }
-function connectRealtime(): void {
+async function connectRealtime(): Promise<void> {
   if (!accessToken || realtimeSocket) return;
+  if (realtimeRefreshRequired || (accessTokenExpiresAt !== undefined && accessTokenExpiresAt <= Date.now() + 30_000)) {
+    try {
+      await refreshAccessToken();
+    } catch (error) {
+      if (error instanceof SessionRefreshError && error.terminal) await invalidateSession();
+      else scheduleRealtimeReconnect();
+      return;
+    }
+  }
+  if (!accessToken || realtimeSocket) return;
+  const token = accessToken;
   const socket = new WebSocket(realtimeURL());
+  let authenticated = false;
   realtimeSocket = socket;
   socket.addEventListener('open', () => {
-    if (realtimeSocket === socket && accessToken) socket.send(JSON.stringify({ type: 'authenticate', access_token: accessToken }));
+    if (realtimeSocket === socket) socket.send(JSON.stringify({ type: 'authenticate', access_token: token }));
   });
   socket.addEventListener('message', (event) => {
     if (realtimeSocket !== socket || typeof event.data !== 'string') return;
     try {
       const message = JSON.parse(event.data) as { type?: string; data?: Message | VoicePresenceChanged };
       if (message.type === 'authenticated') {
+        authenticated = true;
+        realtimeRefreshRequired = false;
         reconnectDelayMilliseconds = 1_000;
         sendToRenderers('realtime:connected');
       } else if (message.type === 'message.created' && message.data) {
@@ -95,6 +155,7 @@ function connectRealtime(): void {
   socket.addEventListener('close', () => {
     if (realtimeSocket === socket) {
       realtimeSocket = undefined;
+      if (!authenticated) realtimeRefreshRequired = true;
       scheduleRealtimeReconnect();
     }
   });
@@ -108,6 +169,50 @@ async function saveRefreshToken(token: string): Promise<void> {
 async function loadRefreshToken(): Promise<string | null> {
   try { return safeStorage.decryptString(await fs.readFile(refreshTokenPath())); } catch { return null; }
 }
+async function storeTokens(tokens: Tokens): Promise<void> {
+  if (!tokens.access_token || !tokens.refresh_token || !Number.isFinite(tokens.expires_in) || tokens.expires_in <= 0) {
+    throw new SessionRefreshError('The server returned an invalid session.', true);
+  }
+  accessToken = tokens.access_token;
+  accessTokenExpiresAt = Date.now() + tokens.expires_in * 1_000;
+  await saveRefreshToken(tokens.refresh_token);
+  scheduleTokenRefresh();
+}
+async function refreshAccessToken(): Promise<void> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    const refreshToken = await loadRefreshToken();
+    if (!refreshToken) throw new SessionRefreshError('The saved session is unavailable.', true);
+    let response: Response;
+    try {
+      response = await fetch(backendURL + '/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+    } catch {
+      throw new SessionRefreshError('Unable to renew the session while offline.', false);
+    }
+    if (!response.ok) {
+      throw new SessionRefreshError(await responseMessage(response, 'Unable to renew the session.'), response.status === 401 || response.status === 403);
+    }
+    await storeTokens(await response.json() as Tokens);
+  })().finally(() => { refreshInFlight = undefined; });
+  return refreshInFlight;
+}
+async function ensureValidAccessToken(): Promise<string> {
+  if (!accessToken) throw new Error('No active session.');
+  if (accessTokenExpiresAt !== undefined && accessTokenExpiresAt <= Date.now() + 30_000) {
+    try {
+      await refreshAccessToken();
+    } catch (error) {
+      if (error instanceof SessionRefreshError && error.terminal) await invalidateSession();
+      throw error;
+    }
+  }
+  if (!accessToken) throw new Error('No active session.');
+  return accessToken;
+}
 async function responseMessage(response: Response, fallback: string): Promise<string> {
   try {
     const body = await response.json() as { message?: unknown };
@@ -116,24 +221,36 @@ async function responseMessage(response: Response, fallback: string): Promise<st
     return fallback;
   }
 }
+async function fetchCurrentUser(token: string): Promise<User> {
+  const response = await fetch(backendURL + '/me', { headers: { Authorization: 'Bearer ' + token } });
+  if (!response.ok) throw new Error('Session is invalid.');
+  return response.json() as Promise<User>;
+}
 async function authenticate(pathname: string, body: Record<string, string>): Promise<User> {
   const response = await fetch(backendURL + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!response.ok) throw new Error('Authentication failed.');
   const tokens = await response.json() as Tokens;
-  const userResponse = await fetch(backendURL + '/me', { headers: { Authorization: 'Bearer ' + tokens.access_token } });
-  if (!userResponse.ok) throw new Error('Session is invalid.');
-	accessToken = tokens.access_token;
-	await saveRefreshToken(tokens.refresh_token);
-	connectRealtime();
-	return await userResponse.json() as User;
+	const user = await fetchCurrentUser(tokens.access_token);
+	await storeTokens(tokens);
+	void connectRealtime();
+	return user;
 }
 async function authenticatedRequest<T>(pathname: string, method = 'GET', body?: Record<string, unknown>): Promise<T> {
-  if (!accessToken) throw new Error('No active session.');
-  const response = await fetch(backendURL + pathname, {
+  const request = async (token: string): Promise<Response> => fetch(backendURL + pathname, {
     method,
-    headers: { Authorization: 'Bearer ' + accessToken, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { Authorization: 'Bearer ' + token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
+  let response = await request(await ensureValidAccessToken());
+  if (response.status === 401) {
+    try {
+      await refreshAccessToken();
+    } catch (error) {
+      if (error instanceof SessionRefreshError && error.terminal) await invalidateSession();
+      throw new Error('Session expired. Sign in again.');
+    }
+    response = await request(await ensureValidAccessToken());
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => null) as { message?: string } | null;
     throw new Error(error?.message ?? 'Backend request failed.');
@@ -252,13 +369,23 @@ ipcMain.handle('auth:register', async (_event, username: unknown, email: unknown
 ipcMain.handle('auth:current-session', async (): Promise<User | null> => {
   const refreshToken = await loadRefreshToken();
   if (!refreshToken) return null;
-  try { return await authenticate('/auth/refresh', { refresh_token: refreshToken }); } catch { disconnectRealtime(); accessToken = undefined; await fs.rm(refreshTokenPath(), { force: true }); return null; }
+  try {
+    await refreshAccessToken();
+    const user = await fetchCurrentUser(await ensureValidAccessToken());
+    void connectRealtime();
+    return user;
+  } catch (error) {
+    if (error instanceof SessionRefreshError && error.terminal) await invalidateSession();
+    return null;
+  }
 });
 ipcMain.handle('auth:logout', async (): Promise<void> => {
   const refreshToken = await loadRefreshToken();
   if (refreshToken) await fetch(backendURL + '/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: refreshToken }) }).catch(() => undefined);
+  clearRefreshTimer();
   disconnectRealtime();
   accessToken = undefined;
+  accessTokenExpiresAt = undefined;
   await fs.rm(refreshTokenPath(), { force: true });
 });
 ipcMain.handle('servers:list', (): Promise<Server[]> => authenticatedRequest<Server[]>('/servers'));

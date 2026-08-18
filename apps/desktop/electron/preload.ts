@@ -9,6 +9,11 @@ contextBridge.exposeInMainWorld('desktop', {
     register: (username: string, email: string, password: string) => ipcRenderer.invoke('auth:register', username, email, password),
     currentSession: () => ipcRenderer.invoke('auth:current-session'),
     logout: () => ipcRenderer.invoke('auth:logout'),
+    onSessionExpired: (callback: () => void): (() => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('auth:session-expired', listener);
+      return () => ipcRenderer.removeListener('auth:session-expired', listener);
+    },
   },
   servers: {
     list: () => ipcRenderer.invoke('servers:list'),

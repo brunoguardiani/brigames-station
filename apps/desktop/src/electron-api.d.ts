@@ -12,6 +12,7 @@ interface Window {
       register(username: string, email: string, password: string): Promise<{ username: string; email: string; role: string }>;
       currentSession(): Promise<{ username: string; email: string; role: string } | null>;
       logout(): Promise<void>;
+      onSessionExpired(callback: () => void): () => void;
     };
     servers: {
       list(): Promise<Server[]>;

@@ -1,0 +1,52 @@
+name: Notify Discord on Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  discord-notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Send release notes to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RELEASE_NAME: ${{ github.event.release.name || github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_AUTHOR: ${{ github.event.release.author.login }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        shell: bash
+        run: |
+          test -n "$DISCORD_WEBHOOK_URL"
+
+          jq -n \
+            --arg name "$RELEASE_NAME" \
+            --arg tag "$RELEASE_TAG" \
+            --arg author "$RELEASE_AUTHOR" \
+            --arg body "$RELEASE_BODY" \
+            --arg url "$RELEASE_URL" \
+            '{
+              embeds: [
+                {
+                  title: ("🚀 Nova release: " + $name),
+                  url: $url,
+                  description: (
+                    "**Versão:** `" + $tag + "`\n" +
+                    "**Autor:** " + $author + "\n\n" +
+                    (if $body == "" then "Sem notas de versão." else $body end)
+                  )[0:4096],
+                  color: 5814783
+                }
+              ]
+            }' > discord-payload.json
+
+          curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-all-errors \
+            --header 'Content-Type: application/json' \
+            --data-binary @discord-payload.json \
+            "$DISCORD_WEBHOOK_URL"

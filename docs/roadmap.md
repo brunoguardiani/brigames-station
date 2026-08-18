@@ -122,7 +122,8 @@ documented in [`phase-1-identity.md`](./phase-1-identity.md).
   tokens, refresh-token rotation, and logout revocation.
 - [x] Add authentication middleware and the protected `GET /me` endpoint.
 - [x] Add desktop login, secure encrypted refresh-token storage in the
-  Electron main process, session restoration, and logout.
+  Electron main process, automatic access-token renewal, session restoration,
+  and logout.
 - [x] Add automated backend tests and a Postman collection for manual API
   verification.
 

@@ -69,7 +69,9 @@ password or password hash is committed to source control; remove
 
 The renderer never receives Node APIs or raw tokens. The Electron main process
 owns token storage and exposes narrow preload methods for login, logout,
-refresh, and current-session state.
+refresh, and current-session state. It renews the short-lived access token in
+the background before expiry, retries one authenticated request after a 401,
+and refreshes before reconnecting the realtime WebSocket.
 
 ## HTTP Contract Proposal
 
@@ -106,5 +108,7 @@ implementation.
 - Protected endpoints reject missing, invalid, expired, and revoked tokens.
 - Login survives a desktop restart through refresh-token rotation until expiry
   or revocation.
+- An active desktop session renews its access token without requiring a user
+  logout/login while the refresh token remains valid.
 - Logout revokes the refresh token and returns the desktop to the login screen.
 - Neither access nor refresh token is directly exposed to the Angular renderer.

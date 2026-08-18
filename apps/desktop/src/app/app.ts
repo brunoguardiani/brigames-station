@@ -36,6 +36,7 @@ export class AppComponent implements OnInit, OnDestroy {
   protected registrationMode = false;
   protected identity = ''; protected username = ''; protected email = ''; protected password = ''; protected passwordConfirmation = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = ''; protected channelType: 'text' | 'voice' = 'text'; protected messageContent = ''; protected inviteCode = ''; protected createdInvite = '';
   private healthCheckTimer?: ReturnType<typeof setInterval>;
+  private removeSessionExpiredListener?: () => void;
   private removeRealtimeConnectedListener?: () => void;
   private removeRealtimeMessageListener?: () => void;
   private removeRealtimePresenceListener?: () => void;
@@ -50,6 +51,17 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.refreshBackendStatus();
     void this.restoreSession();
     this.healthCheckTimer = setInterval(() => void this.refreshBackendStatus(), 5_000);
+    this.removeSessionExpiredListener = window.desktop.auth.onSessionExpired(() => {
+      void this.leaveVoiceChannel();
+      this.user.set(null);
+      this.servers.set([]);
+      this.channels.set([]);
+      this.members.set([]);
+      this.selectedServer.set(null);
+      this.selectedChannel.set(null);
+      this.messages.set([]);
+      this.error.set('Sua sessão expirou. Entre novamente para continuar.');
+    });
     this.removeRealtimeConnectedListener = window.desktop.realtime.onConnected(() => {
       const channel = this.selectedChannel();
       if (channel) void this.refreshMessages(channel);
@@ -72,6 +84,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   ngOnDestroy(): void {
     if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
+    this.removeSessionExpiredListener?.();
     this.removeRealtimeConnectedListener?.();
     this.removeRealtimeMessageListener?.();
     this.removeRealtimePresenceListener?.();
