@@ -3,6 +3,7 @@ name: Notify Discord on Release
 on:
   release:
     types: [published]
+  workflow_dispatch: # Permite testar manualmente pela aba Actions do GitHub
 
 permissions:
   contents: read
@@ -17,16 +18,16 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           RELEASE_NAME: ${{ github.event.release.name || github.event.release.tag_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RELEASE_AUTHOR: ${{ github.event.release.author.login }}
+          RELEASE_AUTHOR: ${{ github.event.release.author.login || github.actor }}
           RELEASE_BODY: ${{ github.event.release.body }}
-          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_URL: ${{ github.event.release.html_url || github.server_url }}
         shell: bash
         run: |
           test -n "$DISCORD_WEBHOOK_URL"
 
           jq -n \
-            --arg name "$RELEASE_NAME" \
-            --arg tag "$RELEASE_TAG" \
+            --arg name "${RELEASE_NAME:-Teste de Release}" \
+            --arg tag "${RELEASE_TAG:-v1.0.0-test}" \
             --arg author "$RELEASE_AUTHOR" \
             --arg body "$RELEASE_BODY" \
             --arg url "$RELEASE_URL" \
@@ -38,7 +39,7 @@ jobs:
                   description: (
                     "**Versão:** `" + $tag + "`\n" +
                     "**Autor:** " + $author + "\n\n" +
-                    (if $body == "" then "Sem notas de versão." else $body end)
+                    (if $body == "" or $body == null or $body == "null" then "Sem notas de versão." else $body end)
                   )[0:4096],
                   color: 5814783
                 }
