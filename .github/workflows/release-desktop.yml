@@ -1,3 +1,5 @@
+Você disse:
+
 name: Release desktop applications
 
 on:
@@ -15,60 +17,43 @@ jobs:
     name: Read release version
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-
     outputs:
       value: ${{ steps.version.outputs.value }}
-
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-
       - id: version
         run: |
           version=$(node -p "require('./apps/desktop/package.json').version")
-
           case "$version" in
             [0-9]*.[0-9]*.[0-9]* | [0-9]*.[0-9]*.[0-9]*-*) ;;
-            *)
-              echo "Invalid desktop version: $version" >&2
-              exit 1
-              ;;
+            *) echo "Invalid desktop version: $version" >&2; exit 1 ;;
           esac
-
           echo "value=$version" >> "$GITHUB_OUTPUT"
-
   windows:
     name: Windows x64 installer
     needs: version
     runs-on: windows-latest
-
     steps:
       - uses: actions/checkout@v6
-
       - uses: pnpm/action-setup@v4
         with:
           version: 11.21.0
-
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
       - run: pnpm install --frozen-lockfile
-
       - run: pnpm --filter @brigames-station/desktop run dist:win
-
       - name: Create SHA-256 checksum
         shell: pwsh
         run: |
           $installer = Get-Item "apps/desktop/release/brigames-station-Setup-${{ needs.version.outputs.value }}.exe"
           $checksum = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$checksum  $($installer.Name)" | Set-Content -LiteralPath "$($installer.FullName).sha256" -NoNewline
-
       - uses: actions/upload-artifact@v4
         with:
           name: brigames-station-windows-${{ needs.version.outputs.value }}
@@ -82,26 +67,20 @@ jobs:
     name: macOS Apple Silicon and Intel installers
     needs: version
     runs-on: macos-latest
-
     steps:
       - uses: actions/checkout@v6
-
       - uses: pnpm/action-setup@v4
         with:
           version: 11.21.0
-
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
       - run: pnpm install --frozen-lockfile
-
       - run: pnpm --filter @brigames-station/desktop run dist:mac
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-
       - name: Create SHA-256 checksums
         shell: bash
         run: |
@@ -109,7 +88,6 @@ jobs:
             checksum=$(shasum -a 256 "$installer" | awk '{print $1}')
             printf '%s  %s\n' "$checksum" "$(basename "$installer")" > "$installer.sha256"
           done
-
       - uses: actions/upload-artifact@v4
         with:
           name: brigames-station-macos-${{ needs.version.outputs.value }}
@@ -123,41 +101,28 @@ jobs:
     name: Linux x64 packages
     needs: version
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v6
-
       - uses: pnpm/action-setup@v4
         with:
           version: 11.21.0
-
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
       - run: pnpm install --frozen-lockfile
-
       - run: pnpm --filter @brigames-station/desktop run dist:linux
-
       - name: Create SHA-256 checksums
         shell: bash
         run: |
           shopt -s nullglob
-
-          installers=(
-            apps/desktop/release/*.AppImage
-            apps/desktop/release/*.deb
-          )
-
+          installers=(apps/desktop/release/*.AppImage apps/desktop/release/*.deb)
           test "${#installers[@]}" -gt 0
-
           for installer in "${installers[@]}"; do
             checksum=$(sha256sum "$installer" | awk '{print $1}')
             printf '%s  %s\n' "$checksum" "$(basename "$installer")" > "$installer.sha256"
           done
-
       - uses: actions/upload-artifact@v4
         with:
           name: brigames-station-linux-${{ needs.version.outputs.value }}
@@ -173,13 +138,11 @@ jobs:
     name: Publish private GitHub Release
     needs: [version, windows, macos, linux]
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: release-artifacts
           merge-multiple: true
-
       - name: Create private GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -188,73 +151,7 @@ jobs:
           RELEASE_SHA: ${{ github.sha }}
         run: |
           find release-artifacts -type f -print
-
           gh release create "v$RELEASE_VERSION" release-artifacts/* \
             --target "$RELEASE_SHA" \
             --title "brigames-station v$RELEASE_VERSION" \
             --generate-notes
-
-      - name: Get release information
-        id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ needs.version.outputs.value }}
-        run: |
-          release_url=$(gh release view "v$RELEASE_VERSION" --json url --jq '.url')
-          release_body=$(gh release view "v$RELEASE_VERSION" --json body --jq '.body')
-
-          {
-            echo "url=$release_url"
-            echo "body<<EOF"
-            echo "$release_body"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Send release notification to Discord
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          RELEASE_VERSION: ${{ needs.version.outputs.value }}
-          RELEASE_URL: ${{ steps.release.outputs.url }}
-          RELEASE_BODY: ${{ steps.release.outputs.body }}
-          RELEASE_AUTHOR: ${{ github.actor }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          test -n "$DISCORD_WEBHOOK_URL"
-
-          jq -n \
-            --arg version "$RELEASE_VERSION" \
-            --arg author "$RELEASE_AUTHOR" \
-            --arg body "$RELEASE_BODY" \
-            --arg url "$RELEASE_URL" \
-            '{
-              embeds: [
-                {
-                  title: ("🚀 Nova release: v" + $version),
-                  url: $url,
-                  description: (
-                    "**Versão:** `" + $version + "`\n" +
-                    "**Autor:** " + $author + "\n\n" +
-                    (
-                      if $body == "" or $body == "null"
-                      then "Sem notas de versão."
-                      else $body
-                      end
-                    )
-                  )[0:4096],
-                  color: 5814783
-                }
-              ]
-            }' > discord-payload.json
-
-          echo "Sending release notification to Discord..."
-
-          curl --fail-with-body --silent --show-error \
-            --retry 3 \
-            --retry-all-errors \
-            --header 'Content-Type: application/json' \
-            --data-binary @discord-payload.json \
-            "$DISCORD_WEBHOOK_URL"
-
-          echo "Discord notification sent successfully."
