@@ -38,6 +38,3 @@ coverage.txt
 Thumbs.db
 .idea/
 .vscode/
-
-# Local-only developer helpers
-scripts/build-desktop-installer.mjs

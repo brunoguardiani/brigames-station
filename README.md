@@ -115,18 +115,37 @@ pnpm --filter @brigames-station/desktop run build
 pnpm --filter @brigames-station/desktop run electron
 ```
 
-## Build the Windows installer
+## Build a desktop installer locally
 
-Create the 64-bit NSIS installer from the workspace root:
+The same script builds the installer for the operating system on which it is
+run and creates a SHA-256 checksum alongside every generated installer:
 
-```powershell
-pnpm --filter @brigames-station/desktop run dist:win
+```bash
+node scripts/build-desktop-installer.mjs
 ```
 
-The artifact is written to
-`apps/desktop/release/brigames-station-Setup-<version>.exe`. The packaged
-application defaults to `https://api.groupgo.com.br`; a local development
-session may still override it with `DESKTOP_BACKEND_URL`.
+For subsequent builds, when the workspace dependencies are already installed:
+
+```bash
+node scripts/build-desktop-installer.mjs --skip-install
+```
+
+Run it from the repository root on the target operating system:
+
+| Build machine | Generated artifacts in `apps/desktop/release/` |
+| --- | --- |
+| Windows x64 | `brigames-station-Setup-<version>.exe` and `.exe.sha256` |
+| macOS Intel or Apple Silicon | Intel and Apple Silicon `.dmg` files, each with `.sha256` |
+| Linux x64 | `.AppImage` and `.deb` files, each with `.sha256` |
+
+The script intentionally builds only the current operating system. Generate a
+Windows installer on Windows, DMGs on macOS, and Linux packages on Linux. The
+packaged application defaults to `https://api.groupgo.com.br`; a local
+development session may still override it with `DESKTOP_BACKEND_URL`.
+
+Increase `version` in `apps/desktop/package.json` before distributing an
+update. The stable application identifier lets the Windows installer update an
+existing installation, while the higher version distinguishes the release.
 
 The first public builds are not code signed, so Windows may display an
 "unknown publisher" warning. Distribute the installer only through a trusted
