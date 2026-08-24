@@ -4,6 +4,7 @@ import path from 'node:path';
 
 const backendURL = process.env['DESKTOP_BACKEND_URL'] ?? (app.isPackaged ? 'https://api.groupgo.com.br' : 'http://127.0.0.1:8080');
 const backendHealthURL = backendURL + '/health';
+const webRTCStunURL = process.env['WEBRTC_STUN_URL'] ?? 'stun:stun.cloudflare.com:3478';
 if (process.platform === 'win32') app.setAppUserModelId('com.brigames-station.desktop');
 let accessToken: string | undefined;
 let accessTokenExpiresAt: number | undefined;
@@ -46,8 +47,43 @@ type ServerMember = { id: number; username: string; role: 'owner' | 'member'; on
 type Channel = { id: number; server_id: number; name: string; type: 'text' | 'voice'; position: number; created_by: number; created_at: string };
 type Message = { id: number; channel_id: number; author_id: number; author_username: string; content: string; created_at: string };
 type MessagePage = { messages: Message[]; next_before: number | null };
-type DisplaySource = { id: string; name: string; thumbnail: string };
+type DisplaySource = { id: string; name: string; thumbnail: string; kind: 'screen' | 'window' };
 type VoicePresenceChanged = { server_id: number; user_id: number; channel_id: number | null };
+type WebRTCSignalKind = 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch';
+type WebRTCSignal = { channel_id: number; to_user_id: number; kind: WebRTCSignalKind; session_id?: string; payload: unknown };
+type IncomingWebRTCSignal = Omit<WebRTCSignal, 'to_user_id'> & { from_user_id: number };
+
+const negotiationSignalKinds: readonly WebRTCSignalKind[] = ['offer', 'answer', 'ice'];
+const webRTCSessionIDPattern = /^[A-Za-z0-9_-]{1,64}$/;
+
+function hasValidWebRTCSession(signal: { kind?: unknown; session_id?: unknown }): boolean {
+  if (typeof signal.kind !== 'string') return false;
+  return negotiationSignalKinds.includes(signal.kind as WebRTCSignalKind)
+    ? typeof signal.session_id === 'string' && webRTCSessionIDPattern.test(signal.session_id)
+    : signal.session_id === undefined || signal.session_id === '';
+}
+
+function isWebRTCSignal(value: unknown): value is WebRTCSignal {
+  if (!value || typeof value !== 'object') return false;
+  const signal = value as Partial<WebRTCSignal>;
+  return Number.isSafeInteger(signal.channel_id) && (signal.channel_id ?? 0) > 0
+    && Number.isSafeInteger(signal.to_user_id) && (signal.to_user_id ?? 0) > 0
+    && typeof signal.kind === 'string'
+    && ['offer', 'answer', 'ice', 'media.available', 'media.unavailable', 'media.query', 'media.watch', 'media.unwatch'].includes(signal.kind)
+    && hasValidWebRTCSession(signal)
+    && signal.payload !== undefined;
+}
+
+function isIncomingWebRTCSignal(value: unknown): value is IncomingWebRTCSignal {
+  if (!value || typeof value !== 'object') return false;
+  const signal = value as Partial<IncomingWebRTCSignal>;
+  return Number.isSafeInteger(signal.channel_id) && (signal.channel_id ?? 0) > 0
+    && Number.isSafeInteger(signal.from_user_id) && (signal.from_user_id ?? 0) > 0
+    && typeof signal.kind === 'string'
+    && ['offer', 'answer', 'ice', 'media.available', 'media.unavailable', 'media.query', 'media.watch', 'media.unwatch'].includes(signal.kind)
+    && hasValidWebRTCSession(signal)
+    && signal.payload !== undefined;
+}
 
 class SessionRefreshError extends Error {
   constructor(message: string, readonly terminal: boolean) { super(message); }
@@ -136,7 +172,7 @@ async function connectRealtime(): Promise<void> {
   socket.addEventListener('message', (event) => {
     if (realtimeSocket !== socket || typeof event.data !== 'string') return;
     try {
-      const message = JSON.parse(event.data) as { type?: string; data?: Message | VoicePresenceChanged };
+      const message = JSON.parse(event.data) as { type?: string; data?: Message | VoicePresenceChanged | IncomingWebRTCSignal };
       if (message.type === 'authenticated') {
         authenticated = true;
         realtimeRefreshRequired = false;
@@ -148,6 +184,10 @@ async function connectRealtime(): Promise<void> {
         sendToRenderers('realtime:presence-changed', message.data);
       } else if (message.type === 'voice.presence.changed' && message.data) {
         sendToRenderers('realtime:voice-presence-changed', message.data);
+      } else if (message.type === 'webrtc.signal' && isIncomingWebRTCSignal(message.data)) {
+        const signal = message.data;
+        console.info('[webrtc] signal received from backend', { channelID: signal.channel_id, fromUserID: signal.from_user_id, kind: signal.kind });
+        sendToRenderers('realtime:webrtc-signal', signal);
       }
     } catch { /* Ignore invalid realtime payloads. */ }
   });
@@ -309,6 +349,9 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
   window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
     callback((permission === 'media' || permission === 'display-capture') && isTrustedRendererURL(webContents.getURL()));
   });
+  window.webContents.on('console-message', (event) => {
+    if (event.message.startsWith('[webrtc]')) console.info(`[renderer] ${event.message}`);
+  });
   window.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
     const sourceID = selectedDisplaySourceID;
     selectedDisplaySourceID = undefined;
@@ -412,14 +455,25 @@ ipcMain.handle('servers:leave', (_event, serverID: unknown): Promise<void> => {
 ipcMain.handle('messages:list', (_event, channelID: unknown): Promise<MessagePage> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0) throw new Error('Invalid channel ID.'); return authenticatedRequest<MessagePage>('/channels/' + channelID + '/messages'); });
 ipcMain.handle('messages:create', (_event, channelID: unknown, content: unknown): Promise<Message> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0 || typeof content !== 'string') throw new Error('Invalid message input.'); return authenticatedRequest<Message>('/channels/' + channelID + '/messages', 'POST', { content }); });
 ipcMain.handle('voice:join', (_event, channelID: unknown): Promise<{ url: string; token: string; room: string }> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0) throw new Error('Invalid voice channel ID.'); return authenticatedRequest('/voice/channels/' + channelID + '/token', 'POST'); });
+ipcMain.handle('voice:get-webrtc-configuration', (event): { iceServers: Array<{ urls: string }> } => {
+  if (!isTrustedRendererURL(event.sender.getURL())) throw new Error('Untrusted WebRTC configuration request.');
+  return { iceServers: [{ urls: webRTCStunURL }] };
+});
 ipcMain.handle('voice:set-presence', (_event, channelID: unknown): Promise<void> => {
   if (channelID !== null && (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0)) throw new Error('Invalid voice channel ID.');
   return authenticatedRequest<void>('/voice/presence', 'PUT', { channel_id: channelID as number | null });
 });
+ipcMain.handle('realtime:send-webrtc-signal', (event, signal: unknown): void => {
+  if (!isTrustedRendererURL(event.sender.getURL()) || !isWebRTCSignal(signal) || !realtimeSocket || realtimeSocket.readyState !== WebSocket.OPEN) throw new Error('Realtime signaling is unavailable.');
+  console.info('[webrtc] signal sent to backend', { channelID: signal.channel_id, toUserID: signal.to_user_id, kind: signal.kind });
+  realtimeSocket.send(JSON.stringify({ type: 'webrtc.signal', data: signal }));
+});
 ipcMain.handle('screen-share:list-sources', async (event): Promise<DisplaySource[]> => {
   if (!isTrustedRendererURL(event.sender.getURL())) throw new Error('Untrusted screen-share request.');
   const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } });
-  return sources.map((source) => ({ id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() }));
+  return sources
+    .map((source) => ({ id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL(), kind: source.id.startsWith('screen:') ? 'screen' as const : 'window' as const }))
+    .sort((left, right) => Number(right.kind === 'screen') - Number(left.kind === 'screen'));
 });
 ipcMain.handle('screen-share:select-source', async (event, sourceID: unknown): Promise<void> => {
   if (!isTrustedRendererURL(event.sender.getURL()) || typeof sourceID !== 'string' || !sourceID) throw new Error('Invalid screen-share source.');

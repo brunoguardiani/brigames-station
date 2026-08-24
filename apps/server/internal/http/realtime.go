@@ -7,9 +7,59 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/coder/websocket"
+	"log/slog"
 	"net/http"
 	"time"
 )
+
+type webRTCSignal struct {
+	ChannelID int64           `json:"channel_id"`
+	ToUserID  int64           `json:"to_user_id"`
+	Kind      string          `json:"kind"`
+	SessionID string          `json:"session_id,omitempty"`
+	Payload   json.RawMessage `json:"payload"`
+}
+
+func (s webRTCSignal) valid() bool {
+	if s.ChannelID <= 0 || s.ToUserID <= 0 || len(s.Payload) == 0 || !json.Valid(s.Payload) {
+		return false
+	}
+	switch s.Kind {
+	case "offer", "answer", "ice":
+		return validWebRTCSessionID(s.SessionID)
+	case "media.available", "media.unavailable", "media.query", "media.watch", "media.unwatch":
+		return s.SessionID == ""
+	default:
+		return false
+	}
+}
+
+func validWebRTCSessionID(sessionID string) bool {
+	if len(sessionID) == 0 || len(sessionID) > 64 {
+		return false
+	}
+	for _, character := range []byte(sessionID) {
+		if (character < 'a' || character > 'z') &&
+			(character < 'A' || character > 'Z') &&
+			(character < '0' || character > '9') &&
+			character != '-' && character != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func webRTCSignalAllowed(hub *realtime.Hub, fromUserID int64, signal webRTCSignal) bool {
+	if !signal.valid() || signal.ToUserID == fromUserID {
+		return false
+	}
+	fromPresence, connected := hub.GetVoicePresence(fromUserID)
+	if !connected || fromPresence.ChannelID != signal.ChannelID {
+		return false
+	}
+	toPresence, connected := hub.GetVoicePresence(signal.ToUserID)
+	return connected && toPresence.ServerID == fromPresence.ServerID && toPresence.ChannelID == fromPresence.ChannelID
+}
 
 func realtimeHandler(hub *realtime.Hub, tokens *auth.TokenManager, serverService *servers.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -18,7 +68,7 @@ func realtimeHandler(hub *realtime.Hub, tokens *auth.TokenManager, serverService
 			return
 		}
 		defer conn.CloseNow()
-		conn.SetReadLimit(4 << 10)
+		conn.SetReadLimit(64 << 10)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_, data, e := conn.Read(ctx)
@@ -57,9 +107,30 @@ func realtimeHandler(hub *realtime.Hub, tokens *auth.TokenManager, serverService
 		}()
 		_ = conn.Write(context.Background(), websocket.MessageText, []byte(`{"type":"authenticated"}`))
 		for {
-			if _, _, e = conn.Read(context.Background()); e != nil {
+			_, data, e := conn.Read(context.Background())
+			if e != nil {
 				return
 			}
+			var message struct {
+				Type string          `json:"type"`
+				Data json.RawMessage `json:"data"`
+			}
+			if json.Unmarshal(data, &message) != nil || message.Type != "webrtc.signal" {
+				continue
+			}
+			var signal webRTCSignal
+			if json.Unmarshal(message.Data, &signal) != nil || !webRTCSignalAllowed(hub, claims.Subject, signal) {
+				slog.Warn("reject WebRTC signal", "from_user_id", claims.Subject)
+				continue
+			}
+			slog.Debug("relay WebRTC signal", "from_user_id", claims.Subject, "to_user_id", signal.ToUserID, "channel_id", signal.ChannelID, "kind", signal.Kind)
+			hub.Publish([]int64{signal.ToUserID}, realtime.Event{Type: "webrtc.signal", Data: map[string]any{
+				"channel_id":   signal.ChannelID,
+				"from_user_id": claims.Subject,
+				"kind":         signal.Kind,
+				"session_id":   signal.SessionID,
+				"payload":      signal.Payload,
+			}})
 		}
 	}
 }

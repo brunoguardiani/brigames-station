@@ -34,12 +34,32 @@
                   @for (member of voiceMembers(channel.id); track member.id) {
                     <div>
                       <span class="voice-participant-avatar" [class.speaking]="isVoiceMemberSpeaking(member)">{{ member.username.slice(0, 1).toUpperCase() }}</span>
-                      <span>{{ member.username }}</span>
-                      @if (voiceChannel()?.id === channel.id && isVoiceMemberMuted(member)) {
-                        <span class="voice-participant-muted" title="Microfone silenciado" aria-label="Microfone silenciado">
-                          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg>
-                        </span>
-                      }
+                      <span class="voice-participant-name">{{ member.username }}</span>
+                      <span class="voice-participant-actions">
+                        @if (screenShareForMember(member.id, channel.id); as media) {
+                          <button class="voice-media-indicator" type="button" [class.watching]="isWatchingPeerMedia(media)" [attr.aria-pressed]="isWatchingPeerMedia(media)" [title]="isWatchingPeerMedia(media) ? 'Parar de assistir tela de ' + member.username : 'Assistir tela de ' + member.username" [attr.aria-label]="isWatchingPeerMedia(media) ? 'Parar de assistir compartilhamento de tela de ' + member.username : 'Assistir compartilhamento de tela de ' + member.username" (click)="watchPeerMedia(media)">
+                            @if (isWatchingPeerMedia(media)) {
+                              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m8.5 10.5 2 2 4-4"/><path d="M8 22h8M12 18v4"/></svg>
+                            } @else {
+                              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m10 9 4 2-4 2Z" fill="currentColor" stroke="none"/><path d="M8 22h8M12 18v4"/></svg>
+                            }
+                          </button>
+                        }
+                        @if (cameraForMember(member.id, channel.id); as media) {
+                          <button class="voice-media-indicator" type="button" [class.watching]="isWatchingPeerMedia(media)" [attr.aria-pressed]="isWatchingPeerMedia(media)" [title]="isWatchingPeerMedia(media) ? 'Parar de assistir câmera de ' + member.username : 'Assistir câmera de ' + member.username" [attr.aria-label]="isWatchingPeerMedia(media) ? 'Parar de assistir câmera de ' + member.username : 'Assistir câmera de ' + member.username" (click)="watchPeerMedia(media)">
+                            @if (isWatchingPeerMedia(media)) {
+                              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 10 4.5-2.25A1 1 0 0 1 21 8.65v6.7a1 1 0 0 1-1.5.9L15 14"/><path d="m6.5 12 1.5 1.5 3-3"/></svg>
+                            } @else {
+                              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 10 4.5-2.25A1 1 0 0 1 21 8.65v6.7a1 1 0 0 1-1.5.9L15 14"/></svg>
+                            }
+                          </button>
+                        }
+                        @if (voiceChannel()?.id === channel.id && isVoiceMemberMuted(member)) {
+                          <span class="voice-participant-muted" title="Microfone silenciado" aria-label="Microfone silenciado">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg>
+                          </span>
+                        }
+                      </span>
                     </div>
                   }
                   @if (voiceChannel()?.id === channel.id) {
@@ -66,8 +86,9 @@
     <section class="conversation-panel" [class.voice-media-active]="voiceMediaActive() && voiceMediaVisible()">
       @if (voiceChannel()) {
         <section class="voice-video-stage" aria-label="Vídeos do canal de voz">
-          <div id="voice-media-grid" class="voice-media-grid"></div>
-          <div id="camera-videos" class="camera-videos"></div>
+          <div id="voice-media-layout" class="voice-media-layout" [class.has-featured]="featuredPeerMediaID() !== null">
+            <div id="voice-media-grid" class="voice-media-grid" aria-label="Transmissões em exibição"></div>
+          </div>
         </section>
       }
       @if (selectedChannel(); as channel) {
@@ -88,7 +109,7 @@
         @if (systemAudioSupported) { <label class="screen-audio-option"><input type="checkbox" name="shareSystemAudio" [(ngModel)]="shareSystemAudio"> Compartilhar áudio do sistema</label> }
         <div class="screen-source-list">
           @for (source of screenShareSources(); track source.id) {
-            <button type="button" (click)="startScreenShare(source)" [disabled]="loading()"><img [src]="source.thumbnail" alt=""><span>{{ source.name }}</span></button>
+            <button type="button" (click)="startScreenShare(source)" [disabled]="loading()"><img [src]="source.thumbnail" alt=""><span><strong>{{ source.kind === 'screen' ? 'Tela inteira' : 'Janela' }}</strong>{{ source.name }}</span></button>
           }
         </div>
         <div class="confirmation-actions"><button type="button" (click)="cancelScreenSharePicker()">Cancelar</button></div>

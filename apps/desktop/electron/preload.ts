@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('desktop', {
   messages: { list: (channelID: number) => ipcRenderer.invoke('messages:list', channelID), create: (channelID: number, content: string) => ipcRenderer.invoke('messages:create', channelID, content) },
   voice: {
     join: (channelID: number) => ipcRenderer.invoke('voice:join', channelID),
+    getWebRTCConfiguration: () => ipcRenderer.invoke('voice:get-webrtc-configuration'),
     setPresence: (channelID: number | null) => ipcRenderer.invoke('voice:set-presence', channelID),
   },
   screenShare: {
@@ -55,6 +56,12 @@ contextBridge.exposeInMainWorld('desktop', {
       const listener = (_event: Electron.IpcRendererEvent, presence: unknown) => callback(presence);
       ipcRenderer.on('realtime:voice-presence-changed', listener);
       return () => ipcRenderer.removeListener('realtime:voice-presence-changed', listener);
+    },
+    sendWebRTCSignal: (signal: unknown) => ipcRenderer.invoke('realtime:send-webrtc-signal', signal),
+    onWebRTCSignal: (callback: (signal: unknown) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, signal: unknown) => callback(signal);
+      ipcRenderer.on('realtime:webrtc-signal', listener);
+      return () => ipcRenderer.removeListener('realtime:webrtc-signal', listener);
     },
   },
 });

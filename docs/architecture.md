@@ -26,19 +26,30 @@ concrete requirement.
                                v
                           PostgreSQL
 
-                 Future media-plane integration
+                    Hybrid realtime media plane
 
-                          Desktop Client
-                               |
-                             WebRTC
-                               |
-                               v
-                        LiveKit SFU
+                  Desktop Client <--- WebRTC ---> LiveKit SFU  (voice)
+
+                  Desktop Client <---- WebRTC ----> Desktop Client
+                         \                              /
+                          \--- HTTPS / WSS signaling ---/
+                                       |
+                                       v
+                                  Go Backend
 ```
 
-The Go backend owns the control plane. LiveKit, when introduced in a future
-phase, owns the media plane. The backend authorizes media sessions, but it must
-not proxy audio, video, or screen-sharing traffic.
+The Go backend owns the control plane. LiveKit continues to carry voice, while
+camera and screen-sharing use direct WebRTC peer connections between authorized
+desktop clients. The backend authorizes the peer connections and carries their
+signaling only; it must not proxy camera or screen-sharing traffic. The initial
+P2P delivery uses Cloudflare's public STUN endpoint for ICE discovery and
+intentionally has no TURN relay.
+
+Phase 10 is still in progress. STUN discovery does not guarantee connectivity
+through every NAT or firewall, and there is no VPS media fallback when a direct
+connection cannot be established. During ICE negotiation, peers can learn
+network-address metadata about each other; Cloudflare receives connectivity
+metadata but does not receive or relay the media.
 
 ## Phase 0 Architecture
 
@@ -74,7 +85,7 @@ typed API required by the renderer.
 ## Production Deployment Baseline
 
 The initial production environment is a single remote VPS for a small private
-group, including approximately 30 concurrent users.
+group, targeting approximately 15 concurrent users.
 
 ```text
 Desktop Electron -> HTTPS / WSS -> TLS reverse proxy -> Go backend -> managed PostgreSQL
@@ -89,7 +100,9 @@ Desktop Electron -> HTTPS / WSS -> TLS reverse proxy -> Go backend -> managed Po
 - Logs must not contain credentials, JWTs, refresh tokens, invite codes, or message content.
 - PostgreSQL requires automated backups before the service is opened to users.
 
-LiveKit will later be a separate media-plane service; Go retains authorization and never proxies media.
+The in-progress Phase 10 keeps LiveKit for voice and migrates only camera and
+screen sharing to P2P WebRTC. Go retains authorization and signaling for those
+flows and never proxies their media.
 
 ## Explicitly Out of Scope for Phase 0
 

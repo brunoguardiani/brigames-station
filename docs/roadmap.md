@@ -360,32 +360,79 @@ without changing the Go backend into a media proxy.
   bandwidth-quality controls.
 - TURN relay and broader network-connectivity hardening.
 
-## Phase 10 - Remote Media Reliability
+## Phase 10 - P2P Camera and Screen Sharing
 
-Phase 10 is the next planned phase. Its purpose is to make the already
-delivered voice, camera, and screen-sharing experience reliable for users on
-different networks, including restrictive NATs.
+Phase 10 is in progress. The authenticated signaling path and the desktop P2P
+media path are implemented, but the phase has not yet met its external-network
+and multi-user acceptance criteria.
 
-### Proposed Scope
+This phase supersedes only the Phase 9 delivery path for camera and screen
+sharing. LiveKit remains responsible for voice, and the prior Phase 9
+acceptance does not validate the new P2P path.
 
-- Add and configure a TURN relay compatible with the single-node LiveKit
-  deployment, including restricted relay ports and credentials held only in
-  production environment variables.
-- Test voice, camera, screen sharing, and system audio from at least two
-  distinct external networks, not only two clients on the same LAN.
-- Surface clear desktop connection and media-permission errors for microphone,
-  camera, and screen sharing.
-- Document the production firewall, DNS, TLS, credential rotation, and
-  rollback procedure for the media relay.
+### Implemented - Pending Acceptance
+
+- [x] Retain the LiveKit room connection and token issuance for voice only.
+- [x] Relay bounded, authenticated P2P signaling only between users present in
+  the same voice channel.
+- [x] Cover signal-envelope validation, self-target rejection, cross-channel
+  and cross-server rejection, and valid authenticated relay with backend tests.
+- [x] Exchange offers, answers, and ICE candidates through the existing
+  authenticated WebSocket without proxying media through Go or the VPS.
+- [x] Send camera, screen-share, and optional selected system-audio tracks
+  directly between peers.
+- [x] Announce transmissions and require each viewer to opt in independently;
+  allow that viewer to stop watching without leaving the voice channel.
+- [x] Preserve voice controls and implement a contained multi-stream stage with
+  viewer-local feature and unfeature state.
+- [x] Expose compact per-participant camera and screen indicators, plus an
+  in-video control for stopping reception.
+- [x] Use configurable Cloudflare STUN discovery with no TURN or VPS media
+  fallback.
+
+### Remaining Implementation
+
+- [ ] Surface clear user-facing signaling, permission, ICE, and peer-connection
+  failure states.
+- [ ] Complete the automated authorization and validation coverage for every
+  signaling rejection path.
+
+### Verification Pending
+
+- [ ] Complete the final two-client local regression matrix after the latest UI
+  and lifecycle changes.
+- [ ] Validate direct media across two distinct external networks.
+- [ ] Exercise an approximately ten-member voice-channel scenario; this is a
+  design target, not a hard application limit.
+- [ ] Verify camera, screen, optional system audio, watch/unwatch,
+  feature/unfeature, resize, and peer join/leave behavior together.
+- [ ] Confirm camera and screen media bypass the Go/VPS data path and measure
+  client and VPS resource usage.
+
+### Approved Decisions
+
+- The design target is approximately ten members in one voice channel. No hard
+  numerical limit is enforced, and this is not yet a completed load-test claim.
+- There is no enforced numerical limit for cameras or screen shares. Viewers
+  opt in to each transmission, so media cost follows actual viewers rather
+  than channel membership.
+- TURN is not included in the initial delivery. A restrictive network that
+  cannot establish a direct WebRTC connection must receive a clear error;
+  media must not be relayed through the VPS.
+- Use Cloudflare's public STUN endpoint `stun:stun.cloudflare.com:3478` for
+  ICE candidate discovery. It receives connectivity metadata only and never
+  relays media.
+- The UI announces available transmissions and lets each viewer start or stop
+  watching independently.
 
 ### Explicitly Out of Scope
 
-- Recording, multi-instance LiveKit, Redis, and distributed presence.
+- LiveKit improvements, recording, Redis, and distributed presence.
 - Automatic desktop updates and mobile clients.
 
 ## Phase 11 - Linux Desktop Distribution
 
-Phase 11 is in progress. It extends the existing Windows and macOS release process
+Phase 11 is complete. It extends the existing Windows and macOS release process
 to Linux desktop users while retaining the same explicit, manually approved
 release workflow.
 
@@ -400,24 +447,47 @@ release workflow.
 - [x] Produce SHA-256 checksum files for each Linux artifact, as for the current
   Windows and macOS installers.
 
-### Remaining Verification
+### Verification
 
-- [ ] Run the CI Linux packaging job and inspect its AppImage and `.deb`
+- [x] Run the CI Linux packaging job and inspect its AppImage and `.deb`
   artifacts.
-- [ ] Run a manually approved desktop release and confirm the Linux assets and
+- [x] Run a manually approved desktop release and confirm the Linux assets and
   checksums are attached to the private GitHub Release.
-- [ ] Document installation, launch, update, and uninstall steps on Pop!_OS.
+- [x] Validate installation and launch on Pop!_OS.
+- [x] Document installation, launch, update, and uninstall steps on Pop!_OS.
 
-### Decisions Required Before Implementation
+### Approved Decisions
 
-- Confirm the supported CPU architecture for the first release: `x64` only is
-  recommended; ARM64 can be added later when there is a real user need.
-- Confirm whether unsigned Linux packages are acceptable initially. AppImage
-  and `.deb` packages can be distributed without a code-signing certificate,
-  but users may receive a trust warning depending on their distribution.
+- The first Linux release supports `x64` only. ARM64 will be added only when
+  there is a real user need.
+- Unsigned AppImage and `.deb` packages are accepted for the private initial
+  distribution. Users must verify the published SHA-256 checksum before use.
 
 ### Explicitly Out of Scope
 
 - Automatic in-app updates.
 - Distribution through Snap Store, Flathub, or other public package stores.
 - Mobile clients.
+
+## Phase 12 - Frontend and Backend Boundary Review
+
+Phase 12 begins only after the P2P media migration has been validated. Its
+purpose is to verify whether the current Electron/Angular and Go boundaries
+remain appropriate as the application evolves.
+
+### Proposed Scope
+
+- Audit the responsibilities of the Angular renderer, Electron main/preload
+  boundary, Go API, WebSocket signaling, and PostgreSQL access.
+- Confirm that the renderer continues to have no direct access to credentials,
+  database connections, or Node.js capabilities.
+- Identify only concrete coupling that impairs testing, independent release,
+  or maintainability; avoid a structural split merely for its own sake.
+- Produce an approved migration plan if changes are justified, preserving the
+  pnpm monorepo unless a separate repository provides a demonstrated benefit.
+
+### Explicitly Out of Scope
+
+- Splitting the system into microservices.
+- Replacing the Go backend or Angular/Electron desktop stack without a
+  validated technical reason.

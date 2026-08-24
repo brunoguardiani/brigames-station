@@ -70,7 +70,9 @@ restrict WebSocket origins.
 
 ## Current Phase Boundaries
 
-Phase 5 provides HTTP messages, temporary server invites, and realtime
-delivery of newly created messages. It does not provide presence, typing
-indicators, notifications, server deletion, LiveKit, WebRTC, or other media
-features.
+Phase 10 is in progress. LiveKit remains responsible for voice, while camera,
+screen sharing, and optional selected system audio are moving to direct WebRTC
+peer connections. The existing authenticated WebSocket carries bounded
+signaling only. The initial P2P path uses configurable STUN discovery and has
+no TURN or VPS media fallback. External-network, multi-user, failure-state,
+and resource-usage acceptance checks remain pending.

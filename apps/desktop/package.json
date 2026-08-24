@@ -92,7 +92,8 @@
       "icon": "build/brigames-station.icns",
       "category": "public.app-category.social-networking",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "O brigames-station usa o microfone para canais de voz."
+        "NSMicrophoneUsageDescription": "O brigames-station usa o microfone para canais de voz.",
+        "NSCameraUsageDescription": "O brigames-station usa a câmera quando você decide compartilhá-la em um canal de voz."
       }
     },
     "linux": {

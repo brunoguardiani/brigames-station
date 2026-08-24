@@ -40,3 +40,10 @@ microphone and joins automatically. Use the `Sair de <canal>` button to leave.
   optional system-audio sharing on Windows, and the media-stage desktop UI.
 - Deliberately deferred: device selection, recording, TURN configuration, and
   multi-instance operational infrastructure.
+
+## Supersession
+
+LiveKit remains the implementation for voice during and after the in-progress
+Phase 10 migration. Only camera and screen-share transmissions move to direct
+WebRTC P2P with authenticated WebSocket signaling and opt-in reception. No
+additional LiveKit video or screen-sharing features should be added.

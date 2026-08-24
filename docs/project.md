@@ -95,16 +95,16 @@ macOS may be supported later.
 
 ## Realtime Media
 
-Initial approach:
+Approved approach:
 
-- LiveKit
-- WebRTC
-- SFU architecture
-
-Alternative technologies may be evaluated later:
-
-- mediasoup
-- Pion WebRTC
+- LiveKit remains the media service for voice only.
+- WebRTC peer-to-peer media between desktop clients is used for camera and
+  screen-share transmissions.
+- Go API and authenticated WebSocket provide authorization and signaling for
+  the peer-to-peer video flows.
+- Opt-in reception for camera and screen-share transmissions.
+- Cloudflare public STUN for ICE candidate discovery; no TURN relay in the
+  initial P2P delivery.
 
 ## Infrastructure
 
@@ -188,17 +188,20 @@ Responsibilities:
 
 ## Media Plane
 
-Owned by the SFU.
+Voice is owned by the LiveKit SFU. Camera, screen sharing, and optional system
+audio selected with a screen share are owned by direct WebRTC peer connections
+between desktop clients.
 
 Responsibilities:
 
-- Audio.
-- Camera.
-- Screen sharing.
-- WebRTC connections.
-- Media routing.
+- LiveKit voice rooms and voice-audio delivery.
+- Direct P2P camera and screen-sharing delivery.
+- Optional P2P system-audio delivery with a screen share.
+- WebRTC peer connections for viewers that explicitly choose to receive a
+  transmission.
 
-The Go backend must not proxy audio/video traffic.
+The Go backend must not proxy media traffic. It authorizes sessions and
+carries signaling only.
 
 ---
 
@@ -210,7 +213,8 @@ The architecture should optimize for:
 - One VPS.
 - One backend instance initially.
 - One PostgreSQL instance.
-- One SFU instance.
+- One LiveKit instance for voice.
+- No SFU or VPS relay in the camera and screen-sharing path.
 
 Scalability beyond this is not currently a requirement.
 

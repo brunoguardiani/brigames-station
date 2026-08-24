@@ -6,10 +6,11 @@ TypeScript, Go, PostgreSQL, and OpenAPI HTTP contracts.
 
 ## Repository foundation
 
-The repository includes a Go API, local PostgreSQL Compose configuration,
-versioned SQL migrations, authentication endpoints, and an Angular/Electron
-desktop health-status screen. Realtime features and the remaining business
-domains are not implemented yet.
+The repository includes a Go API, PostgreSQL and LiveKit development
+infrastructure, versioned SQL migrations, authenticated server/channel/message
+domains, realtime WebSocket delivery, and an Angular/Electron desktop client.
+Voice uses LiveKit; the in-progress Phase 10 moves camera and screen sharing to
+direct P2P WebRTC.
 
 ```text
 apps/desktop/       Angular renderer and Electron shell
@@ -135,17 +136,54 @@ channel and provide its SHA-256 checksum alongside the file.
 
 Releases are manual and never run on `push`. First update the `version` in
 `apps/desktop/package.json`, commit it, and wait for the CI on `main` to pass.
-Then open **Actions → Release desktop applications → Run workflow** while `main`
+Then open **Actions -> Release desktop applications -> Run workflow** while `main`
 is selected. The workflow creates a private GitHub Release with:
 
 - the Windows x64 installer and SHA-256 checksum;
 - macOS Apple Silicon (`arm64`) and Intel (`x64`) DMG installers, each with a
-  SHA-256 checksum.
+  SHA-256 checksum;
+- Linux x64 AppImage and Debian (`.deb`) packages, each with a SHA-256
+  checksum.
 
 Download the correct installer and checksum from the Release and distribute
 them through a trusted channel. The macOS builds are not yet signed or
 notarized, so they are intended for controlled testing until Apple Developer
 signing is configured.
+
+## Install on Pop!_OS / Debian / Ubuntu
+
+Download the Linux package and its matching `.sha256` file from the private
+GitHub Release. Verify it before installing:
+
+```bash
+cd ~/Downloads
+sha256sum -c brigames-station-<version>-<architecture>.<extension>.sha256
+```
+
+Use the AppImage for a portable installation:
+
+```bash
+chmod +x brigames-station-<version>-x86_64.AppImage
+./brigames-station-<version>-x86_64.AppImage
+```
+
+To update an AppImage, verify and replace the old AppImage with the new one.
+To uninstall it, remove that file.
+
+Use the Debian package for system-managed installation on Pop!_OS, Ubuntu, or
+Debian:
+
+```bash
+sudo apt install ./brigames-station-<version>-amd64.deb
+brigames-station
+```
+
+Install a newer `.deb` with the same command to update the application. To
+uninstall it:
+
+```bash
+sudo apt remove brigames-station
+```
 
 For Angular development with live reload, use two terminals. Start the Angular
 development server in the first:
@@ -164,12 +202,28 @@ pnpm --filter @brigames-station/desktop run electron
 The Electron renderer has no Node integration. It obtains operational,
 authentication, server, and channel data only through the limited preload API.
 
+## P2P camera and screen sharing
+
+Phase 10 keeps voice on LiveKit and sends camera, screen sharing, and optional
+selected system audio directly between desktop clients. Publishing announces
+availability only; each viewer explicitly chooses which transmission to
+receive and can stop watching it independently.
+
+`WEBRTC_STUN_URL` configures ICE discovery in Electron. The documented default
+is Cloudflare's public `stun:stun.cloudflare.com:3478`. STUN receives
+connectivity metadata but never the media stream. WebRTC peers can learn
+network-address metadata about each other during ICE negotiation.
+
+There is intentionally no TURN or VPS media fallback. Clients need working
+HTTPS/WSS access to the API and network conditions that permit a direct WebRTC
+connection. Restrictive NAT or firewall combinations may prevent camera or
+screen viewing even while voice remains available through LiveKit.
+
 ## Verify Phase 0
 
 With PostgreSQL and the backend running, `/health` and `/ready` must both
 return `200`. The desktop must show `available`. Stop the backend process and,
 within five seconds, the desktop must change to `unavailable`.
-# brigames-station
 
 ## Local infrastructure
 
@@ -181,5 +235,6 @@ docker compose up -d
 
 LiveKit is exposed locally at `ws://127.0.0.1:7880` with the development-only
 credentials documented in `.env.example`. These credentials must never be used
-outside local development. Docker Compose also exposes the local WebRTC UDP
-port `7882`.
+outside local development. Docker Compose also exposes UDP port `7882` for the
+LiveKit voice service; camera and screen-sharing P2P connections do not use
+LiveKit's media port.

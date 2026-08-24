@@ -27,10 +27,11 @@ interface Window {
     messages: { list(channelID: number): Promise<MessagePage>; create(channelID: number, content: string): Promise<Message>; };
     voice: {
       join(channelID: number): Promise<{ url: string; token: string; room: string }>;
+      getWebRTCConfiguration(): Promise<{ iceServers: Array<{ urls: string }> }>;
       setPresence(channelID: number | null): Promise<void>;
     };
     screenShare: {
-      listSources(): Promise<Array<{ id: string; name: string; thumbnail: string }>>;
+      listSources(): Promise<Array<{ id: string; name: string; thumbnail: string; kind: 'screen' | 'window' }>>;
       selectSource(sourceID: string): Promise<void>;
     };
     invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; createAndCopy(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
@@ -39,6 +40,8 @@ interface Window {
       onMessageCreated(callback: (message: Message) => void): () => void;
       onPresenceChanged(callback: (presence: { user_id: number; online: boolean }) => void): () => void;
       onVoicePresenceChanged(callback: (presence: { server_id: number; user_id: number; channel_id: number | null }) => void): () => void;
+      sendWebRTCSignal(signal: { channel_id: number; to_user_id: number; kind: 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch'; session_id?: string; payload: unknown }): Promise<void>;
+      onWebRTCSignal(callback: (signal: { channel_id: number; from_user_id: number; kind: 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch'; session_id?: string; payload: unknown }) => void): () => void;
     };
   };
 }
