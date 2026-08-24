@@ -198,6 +198,7 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_VERSION: ${{ needs.version.outputs.value }}
         run: |
           release_url=$(gh release view "v$RELEASE_VERSION" --json url --jq '.url')
