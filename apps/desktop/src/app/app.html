@@ -80,7 +80,7 @@
           <button class="leave-call" type="button" title="Sair do canal de voz" aria-label="Sair do canal de voz" (click)="leaveVoiceChannel()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8.01 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92"/><path d="m3 3 18 18"/></svg></button>
         </div>
       }
-      <footer class="account-bar"><div class="avatar">{{ user()!.username.slice(0, 1).toUpperCase() }}</div><div><strong>{{ user()!.username }}</strong><small>{{ user()!.role }}</small></div><button type="button" title="Log out" (click)="logout()">⇥</button></footer>
+      <footer class="account-bar"><div class="avatar">{{ user()!.username.slice(0, 1).toUpperCase() }}</div><div><strong>{{ user()!.username }}</strong><small>{{ user()!.role }}</small></div><button type="button" title="Configurações" aria-label="Abrir configurações" (click)="openSettings()"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg></button><button type="button" title="Log out" (click)="logout()">⇥</button></footer>
     </aside>
 
     <section class="conversation-panel" [class.voice-media-active]="voiceMediaActive() && voiceMediaVisible()">
@@ -93,8 +93,8 @@
       }
       @if (selectedChannel(); as channel) {
         <header class="conversation-header"><div><span>#</span><h1>{{ channel.name }}</h1></div><span class="connection-status" [class.available]="status() === 'available'">{{ status() }}</span></header>
-        <section class="message-list" aria-live="polite">@for (message of messages(); track message.id) { <article class="message"><div class="message-avatar">{{ message.author_username.slice(0, 1).toUpperCase() }}</div><div><header><strong>{{ message.author_username }}</strong><time [attr.datetime]="message.created_at">{{ message.created_at.slice(11, 16) }}</time></header><p>{{ message.content }}</p></div></article> } @empty { <section class="conversation-empty"><div class="empty-icon">#</div><h2>Welcome to #{{ channel.name }}</h2><p>This is the beginning of the channel. Say hello to your group.</p></section> }</section>
-        <form #messageComposer class="message-composer" (ngSubmit)="sendMessage()"><label class="sr-only" for="message-content">Message</label><textarea id="message-content" name="messageContent" [(ngModel)]="messageContent" required maxlength="4000" rows="1" [placeholder]="'Message #' + channel.name" (keydown)="handleMessageComposerKeydown($event, messageComposer)"></textarea><button type="submit" [disabled]="loading() || !messageContent.trim()">Send</button></form>
+        <section #messageList class="message-list" aria-live="polite">@for (message of messages(); track message.id) { <article class="message"><div class="message-avatar">{{ message.author_username.slice(0, 1).toUpperCase() }}</div><div><header><strong>{{ message.author_username }}</strong><time [attr.datetime]="message.created_at">{{ message.created_at.slice(11, 16) }}</time></header><p>{{ message.content }}</p></div></article> } @empty { <section class="conversation-empty"><div class="empty-icon">#</div><h2>Welcome to #{{ channel.name }}</h2><p>This is the beginning of the channel. Say hello to your group.</p></section> }</section>
+        <form #messageComposer class="message-composer" (ngSubmit)="sendMessage()"><label class="sr-only" for="message-content">Message</label><textarea id="message-content" name="messageContent" [(ngModel)]="messageContent" required maxlength="4000" rows="1" [placeholder]="'Message #' + channel.name" (keydown)="handleMessageComposerKeydown($event, messageComposer)" (input)="autoResizeComposer($event)"></textarea><button type="submit" aria-label="Enviar mensagem" [disabled]="loading() || !messageContent.trim()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button></form>
       } @else { <section class="workspace-empty"><img class="brand large" src="assets/brigames-station-icon.png" alt=""><h1>Welcome to brigames-station</h1><p>Select a server and channel to begin a conversation.</p></section> }
     </section>
     <aside class="members-sidebar" aria-label="Membros do servidor">@if (selectedServer()) { <header><strong>Membros</strong><span>{{ members().length }}</span></header><div class="member-list">@for (member of members(); track member.id) { <div class="member" [class.online]="member.online"><span class="member-avatar">{{ member.username.slice(0, 1).toUpperCase() }}</span><div><strong>{{ member.username }}</strong><small>{{ member.online ? 'online' : 'offline' }}</small></div><span class="presence-dot" [class.online]="member.online"></span></div> }</div> }</aside>
@@ -150,6 +150,22 @@
         }
       }
       @if (error()) { <p class="error-toast" role="alert">{{ error() }}</p> }
+    </section>
+  }
+  @if (settingsOpen()) {
+    <section class="modal-backdrop" (click)="closeSettings()">
+      <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" (click)="$event.stopPropagation()">
+        <h2 id="settings-title">Configurações</h2>
+        <div class="setting-row">
+          <div><strong>Aceleração de hardware</strong><p>Usa a GPU para renderizar a interface e os vídeos. Desative em caso de travamentos, tela piscando ou driver problemático.</p></div>
+          <label class="setting-switch"><input type="checkbox" name="hardwareAcceleration" [checked]="hardwareAcceleration()" (change)="toggleHardwareAcceleration($event)"><span class="setting-track" aria-hidden="true"></span></label>
+        </div>
+        @if (hardwareAccelerationRestartRequired()) {
+          <p class="setting-restart-hint">Reinicie o aplicativo para aplicar a mudança.</p>
+          <div class="confirmation-actions"><button class="confirm-leave" type="button" (click)="relaunchApp()">Reiniciar agora</button></div>
+        }
+        <div class="confirmation-actions"><button type="button" (click)="closeSettings()">Fechar</button></div>
+      </section>
     </section>
   }
 </main>

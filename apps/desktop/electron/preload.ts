@@ -1,19 +1,22 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-import { DESKTOP_UPDATER_CHANNELS, DesktopUpdaterStatus } from './updater/updater.types';
+import type { DesktopUpdaterStatus } from './updater/updater.types';
 
 contextBridge.exposeInMainWorld('desktop', {
+  app: {
+    relaunch: (): Promise<void> => ipcRenderer.invoke('app:relaunch'),
+  },
   backend: {
     getHealth: (): Promise<{ status: 'alive' }> => ipcRenderer.invoke('backend:get-health'),
   },
   updater: {
-    getStatus: (): Promise<DesktopUpdaterStatus> => ipcRenderer.invoke(DESKTOP_UPDATER_CHANNELS.getStatus),
-    checkForUpdates: (): Promise<DesktopUpdaterStatus> => ipcRenderer.invoke(DESKTOP_UPDATER_CHANNELS.checkForUpdates),
-    installUpdate: (): Promise<boolean> => ipcRenderer.invoke(DESKTOP_UPDATER_CHANNELS.installUpdate),
+    getStatus: (): Promise<DesktopUpdaterStatus> => ipcRenderer.invoke('updater:get-status'),
+    checkForUpdates: (): Promise<DesktopUpdaterStatus> => ipcRenderer.invoke('updater:check-for-updates'),
+    installUpdate: (): Promise<boolean> => ipcRenderer.invoke('updater:install-update'),
     onStatusChange: (callback: (status: DesktopUpdaterStatus) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, status: DesktopUpdaterStatus) => callback(status);
-      ipcRenderer.on(DESKTOP_UPDATER_CHANNELS.statusChanged, listener);
-      return () => ipcRenderer.removeListener(DESKTOP_UPDATER_CHANNELS.statusChanged, listener);
+      ipcRenderer.on('updater:status-changed', listener);
+      return () => ipcRenderer.removeListener('updater:status-changed', listener);
     },
   },
   auth: {
@@ -48,6 +51,10 @@ contextBridge.exposeInMainWorld('desktop', {
     selectSource: (sourceID: string) => ipcRenderer.invoke('screen-share:select-source', sourceID),
   },
   invites: { create: (serverID: number) => ipcRenderer.invoke('invites:create', serverID), createAndCopy: (serverID: number) => ipcRenderer.invoke('invites:create-and-copy', serverID), join: (code: string) => ipcRenderer.invoke('invites:join', code) },
+  settings: {
+    get: (): Promise<{ hardwareAcceleration: boolean; active: boolean }> => ipcRenderer.invoke('settings:get'),
+    setHardwareAcceleration: (enabled: boolean): Promise<{ restartRequired: boolean }> => ipcRenderer.invoke('settings:set-hardware-acceleration', enabled),
+  },
   realtime: {
     onConnected: (callback: () => void): (() => void) => {
       const listener = () => callback();
