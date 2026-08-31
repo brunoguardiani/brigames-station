@@ -207,11 +207,16 @@
           <div><strong>Aceleração de hardware</strong><p>Usa a GPU para renderizar a interface e os vídeos. Desative em caso de travamentos, tela piscando ou driver problemático.</p></div>
           <label class="setting-switch"><input type="checkbox" name="hardwareAcceleration" [checked]="hardwareAcceleration()" (change)="toggleHardwareAcceleration($event)"><span class="setting-track" aria-hidden="true"></span></label>
         </div>
+        <div class="setting-row">
+          <div><strong>Supressão de ruído (Krisp)</strong><p>Remove ruído de fundo do microfone com IA: teclado, ventilador, ambiente. Aplica na hora, sem reiniciar.</p></div>
+          <label class="setting-switch"><input type="checkbox" name="noiseFilter" [checked]="noiseFilterEnabled()" (change)="toggleNoiseFilter($any($event.target).checked)"><span class="setting-track" aria-hidden="true"></span></label>
+        </div>
         @if (hardwareAccelerationRestartRequired()) {
           <p class="setting-restart-hint">Reinicie o aplicativo para aplicar a mudança.</p>
           <div class="confirmation-actions"><button class="confirm-leave" type="button" (click)="relaunchApp()">Reiniciar agora</button></div>
         }
         <div class="confirmation-actions"><button type="button" (click)="closeSettings()">Fechar</button></div>
+        <p class="settings-version">brigames-station {{ appVersion() }}</p>
       </section>
     </section>
   }

@@ -25,6 +25,9 @@ importers:
       '@angular/platform-browser':
         specifier: 22.1.2
         version: 22.1.2(@angular/common@22.1.2(@angular/core@22.1.2(@angular/compiler@22.1.2)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.1.2(@angular/compiler@22.1.2)(rxjs@7.8.2)(zone.js@0.16.2))
+      '@livekit/krisp-noise-filter':
+        specifier: ^0.4.4
+        version: 0.4.4(livekit-client@2.21.0(@types/dom-mediacapture-record@1.0.22))
       '@livekit/throws-transformer':
         specifier: 0.1.8
         version: 0.1.8(typescript@6.0.3)
@@ -668,6 +671,11 @@ packages:
     peerDependencies:
       '@inquirer/prompts': '>= 3 < 9'
       listr2: 10.2.1
+
+  '@livekit/krisp-noise-filter@0.4.4':
+    resolution: {integrity: sha512-ljnNPRE0W0IPuMcgRruQZaIz/zWCfqt9vQYXgX0WmojIbHlRrak7BW+FXW4KtXZKi+/dZPNuEL0c2v1wIHR5Cg==}
+    peerDependencies:
+      livekit-client: ^2.18.7
 
   '@livekit/mutex@1.1.1':
     resolution: {integrity: sha512-EsshAucklmpuUAfkABPxJNhzj9v2sG7JuzFDL4ML1oJQSV14sqrpTYnsaOudMAw9yOaW53NU3QQTlUQoRs4czw==}
@@ -1383,6 +1391,7 @@ packages:
   '@xmldom/xmldom@0.8.14':
     resolution: {integrity: sha512-T4EDRUBVZYRldYApjEJiU0e1stYWaRAX7CuSnKzrpwdZKo53zGV8/pqfzV6FfwNl9YThD2OumQYvqtvjvgG7aQ==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
@@ -3748,6 +3757,12 @@ snapshots:
       listr2: 10.2.2
     transitivePeerDependencies:
       - '@types/node'
+
+  '@livekit/krisp-noise-filter@0.4.4(livekit-client@2.21.0(@types/dom-mediacapture-record@1.0.22))':
+    dependencies:
+      '@livekit/mutex': 1.1.1
+      '@livekit/protocol': 1.50.4
+      livekit-client: 2.21.0(@types/dom-mediacapture-record@1.0.22)
 
   '@livekit/mutex@1.1.1': {}
 

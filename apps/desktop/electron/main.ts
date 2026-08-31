@@ -13,14 +13,21 @@ const backendHealthURL = backendURL + '/health';
 const webRTCStunURL = process.env['WEBRTC_STUN_URL'] ?? 'stun:stun.cloudflare.com:3478';
 const debugEnabled = process.argv.includes('--debug') || process.env['BRIGAMES_DEBUG'] === '1';
 
-type AppSettings = { hardwareAcceleration: boolean };
+type AppSettings = { hardwareAcceleration: boolean; noiseFilter: boolean };
+function desktopAppVersion(): string {
+  try {
+    const version = (JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { version?: string }).version;
+    if (typeof version === 'string' && version) return version;
+  } catch { /* Fall back to Electron's own version below. */ }
+  return app.getVersion();
+}
 function settingsPath(): string { return path.join(app.getPath('userData'), 'settings.json'); }
 function readSettings(): AppSettings {
   try {
     const raw = JSON.parse(readFileSync(settingsPath(), 'utf8')) as Partial<AppSettings>;
-    return { hardwareAcceleration: raw.hardwareAcceleration !== false };
+    return { hardwareAcceleration: raw.hardwareAcceleration !== false, noiseFilter: raw.noiseFilter !== false };
   } catch {
-    return { hardwareAcceleration: true };
+    return { hardwareAcceleration: true, noiseFilter: true };
   }
 }
 function writeSettings(settings: AppSettings): void {
@@ -445,12 +452,17 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
 }
 
 ipcMain.handle('app:relaunch', (): void => { app.relaunch(); app.exit(0); });
-ipcMain.handle('settings:get', (): { hardwareAcceleration: boolean; active: boolean } => ({ hardwareAcceleration: appSettings.hardwareAcceleration, active: hardwareAccelerationActive }));
+ipcMain.handle('settings:get', (): { hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean } => ({ hardwareAcceleration: appSettings.hardwareAcceleration, active: hardwareAccelerationActive, appVersion: desktopAppVersion(), noiseFilter: appSettings.noiseFilter }));
 ipcMain.handle('settings:set-hardware-acceleration', (_event, enabled: unknown): { restartRequired: boolean } => {
   if (typeof enabled !== 'boolean') throw new Error('Invalid hardware acceleration setting.');
   appSettings.hardwareAcceleration = enabled;
   writeSettings(appSettings);
   return { restartRequired: enabled !== hardwareAccelerationActive };
+});
+ipcMain.handle('settings:set-noise-filter', (_event, enabled: unknown): void => {
+  if (typeof enabled !== 'boolean') throw new Error('Invalid noise filter setting.');
+  appSettings.noiseFilter = enabled;
+  writeSettings(appSettings);
 });
 
 ipcMain.handle('backend:get-health', async (): Promise<{ status: 'alive' }> => {

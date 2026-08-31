@@ -47,8 +47,9 @@ interface Window {
     };
     invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; createAndCopy(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
     settings: {
-      get(): Promise<{ hardwareAcceleration: boolean; active: boolean }>;
+      get(): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean }>;
       setHardwareAcceleration(enabled: boolean): Promise<{ restartRequired: boolean }>;
+      setNoiseFilter(enabled: boolean): Promise<void>;
     };
     realtime: {
       onConnected(callback: () => void): () => void;

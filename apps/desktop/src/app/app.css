@@ -86,3 +86,4 @@ select{font:inherit;width:100%;border:1px solid transparent;border-radius:.5rem;
 .setting-switch input:checked + .setting-track{background:#7fe1a8}
 .setting-switch input:checked + .setting-track:after{transform:translateX(1.1rem)}
 .setting-restart-hint{margin:.4rem 0 0;color:#f1c380;font-size:.8rem}
+.settings-version{margin:.9rem 0 0;color:var(--subtle);font-size:.72rem;text-align:center;letter-spacing:.02em}

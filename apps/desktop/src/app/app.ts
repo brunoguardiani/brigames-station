@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, OnDestroy, OnInit, Renderer2, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Room, RoomEvent, Track } from 'livekit-client';
+import { LocalAudioTrack, Room, RoomEvent, Track } from 'livekit-client';
+import type { AudioCaptureOptions } from 'livekit-client';
+import { KrispNoiseFilter, isKrispNoiseFilterSupported } from '@livekit/krisp-noise-filter';
 import { deriveCallMiniPreviewModel, type CallMediaDescriptor } from './call-mini-preview-state';
 
 type BackendState = 'checking' | 'available' | 'unavailable';
@@ -59,6 +61,8 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly settingsOpen = signal(false);
   protected readonly hardwareAcceleration = signal(true);
   protected readonly hardwareAccelerationRestartRequired = signal(false);
+  protected readonly appVersion = signal('');
+  protected readonly noiseFilterEnabled = signal(true);
   protected readonly cameraEffect = signal<CameraEffectID>('none');
   protected readonly voiceMediaActive = signal(false);
   protected readonly voiceMediaVisible = signal(false);
@@ -311,7 +315,7 @@ export class AppComponent implements OnInit, OnDestroy {
       });
 
       await room.connect(session.url, session.token);
-      await room.localParticipant.setMicrophoneEnabled(true);
+      await this.enableMicrophone(room);
       this.voiceRoom = room;
       this.voiceChannel.set(channel);
       await window.desktop.voice.setPresence(channel.id);
@@ -363,7 +367,46 @@ export class AppComponent implements OnInit, OnDestroy {
     this.voiceMediaVisible.set(true);
     this.schedulePeerMediaLayout();
   }
-  protected async toggleMicrophone(): Promise<void> { if (!this.voiceRoom) return; const muted = !this.microphoneMuted(); await this.voiceRoom.localParticipant.setMicrophoneEnabled(!muted); this.microphoneMuted.set(muted); this.playVoiceSound(muted ? 'mute' : 'unmute'); }
+  protected async toggleMicrophone(): Promise<void> {
+    if (!this.voiceRoom) return;
+    const muted = !this.microphoneMuted();
+    await this.voiceRoom.localParticipant.setMicrophoneEnabled(!muted, this.microphoneCaptureOptions());
+    if (!muted) await this.applyNoiseFilter(this.voiceRoom);
+    this.microphoneMuted.set(muted);
+    this.playVoiceSound(muted ? 'mute' : 'unmute');
+  }
+  private microphoneCaptureOptions(): AudioCaptureOptions {
+    return { echoCancellation: true, autoGainControl: true, noiseSuppression: !this.noiseFilterEnabled() };
+  }
+  private async enableMicrophone(room: Room): Promise<void> {
+    await room.localParticipant.setMicrophoneEnabled(true, this.microphoneCaptureOptions());
+    if (this.noiseFilterEnabled()) await this.applyNoiseFilter(room);
+  }
+  private async applyNoiseFilter(room: Room): Promise<void> {
+    const track = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
+    if (!(track instanceof LocalAudioTrack) || track.getProcessor()?.name === 'livekit-noise-filter') return;
+    if (!isKrispNoiseFilterSupported()) {
+      console.warn('[voice] krisp noise filter is not supported in this environment');
+      return;
+    }
+    try {
+      await track.setProcessor(KrispNoiseFilter());
+      console.info('[voice] krisp noise filter enabled');
+    } catch (error) {
+      console.warn('[voice] unable to enable krisp noise filter', error instanceof Error ? error.message : String(error));
+    }
+  }
+  protected async toggleNoiseFilter(enabled: boolean): Promise<void> {
+    this.noiseFilterEnabled.set(enabled);
+    try { await window.desktop.settings.setNoiseFilter(enabled); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+    const room = this.voiceRoom;
+    const track = room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
+    if (room && track instanceof LocalAudioTrack) {
+      if (enabled) await this.applyNoiseFilter(room);
+      else await track.stopProcessor().catch(() => undefined);
+    }
+  }
   protected async toggleCamera(preserveNavigation = false): Promise<void> {
     if (!this.voiceRoom) return;
     this.loading.set(true); this.error.set('');
@@ -1136,6 +1179,8 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const settings = await window.desktop.settings.get();
       this.hardwareAcceleration.set(settings.hardwareAcceleration);
+      this.noiseFilterEnabled.set(settings.noiseFilter);
+      this.appVersion.set(settings.appVersion);
       this.hardwareAccelerationRestartRequired.set(settings.hardwareAcceleration !== settings.active);
     } catch { /* Defaults remain until the user toggles the setting. */ }
     this.settingsOpen.set(true);
