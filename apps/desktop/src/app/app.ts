@@ -794,7 +794,7 @@ export class AppComponent implements OnInit, OnDestroy {
     video.autoplay = true;
     video.playsInline = true;
     video.muted = true;
-    video.srcObject = previewEnabled ? stream : null;
+    video.srcObject = local && !previewEnabled ? null : stream;
     video.addEventListener('loadedmetadata', () => {
       console.info('[webrtc] media dimensions', JSON.stringify({ id, kind, videoWidth: video.videoWidth, videoHeight: video.videoHeight }));
     });
