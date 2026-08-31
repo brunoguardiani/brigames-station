@@ -13,7 +13,7 @@ const backendHealthURL = backendURL + '/health';
 const webRTCStunURL = process.env['WEBRTC_STUN_URL'] ?? 'stun:stun.cloudflare.com:3478';
 const debugEnabled = process.argv.includes('--debug') || process.env['BRIGAMES_DEBUG'] === '1';
 
-type AppSettings = { hardwareAcceleration: boolean; noiseFilter: boolean };
+type AppSettings = { hardwareAcceleration: boolean; noiseFilter: boolean; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number };
 function desktopAppVersion(): string {
   try {
     const version = (JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { version?: string }).version;
@@ -25,9 +25,16 @@ function settingsPath(): string { return path.join(app.getPath('userData'), 'set
 function readSettings(): AppSettings {
   try {
     const raw = JSON.parse(readFileSync(settingsPath(), 'utf8')) as Partial<AppSettings>;
-    return { hardwareAcceleration: raw.hardwareAcceleration !== false, noiseFilter: raw.noiseFilter !== false };
+    return {
+      hardwareAcceleration: raw.hardwareAcceleration !== false,
+      noiseFilter: raw.noiseFilter !== false,
+      inputVolumeDb: typeof raw.inputVolumeDb === 'number' && Number.isFinite(raw.inputVolumeDb) ? Math.min(30, Math.max(-30, raw.inputVolumeDb)) : 0,
+      inputDeviceId: typeof raw.inputDeviceId === 'string' && raw.inputDeviceId ? raw.inputDeviceId : null,
+      outputDeviceId: typeof raw.outputDeviceId === 'string' && raw.outputDeviceId ? raw.outputDeviceId : null,
+      outputVolume: typeof raw.outputVolume === 'number' && Number.isFinite(raw.outputVolume) ? Math.min(2, Math.max(0, raw.outputVolume)) : 1,
+    };
   } catch {
-    return { hardwareAcceleration: true, noiseFilter: true };
+    return { hardwareAcceleration: true, noiseFilter: true, inputVolumeDb: 0, inputDeviceId: null, outputDeviceId: null, outputVolume: 1 };
   }
 }
 function writeSettings(settings: AppSettings): void {
@@ -452,7 +459,7 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
 }
 
 ipcMain.handle('app:relaunch', (): void => { app.relaunch(); app.exit(0); });
-ipcMain.handle('settings:get', (): { hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean } => ({ hardwareAcceleration: appSettings.hardwareAcceleration, active: hardwareAccelerationActive, appVersion: desktopAppVersion(), noiseFilter: appSettings.noiseFilter }));
+ipcMain.handle('settings:get', () => ({ ...appSettings, active: hardwareAccelerationActive, appVersion: desktopAppVersion() }));
 ipcMain.handle('settings:set-hardware-acceleration', (_event, enabled: unknown): { restartRequired: boolean } => {
   if (typeof enabled !== 'boolean') throw new Error('Invalid hardware acceleration setting.');
   appSettings.hardwareAcceleration = enabled;
@@ -463,6 +470,22 @@ ipcMain.handle('settings:set-noise-filter', (_event, enabled: unknown): void => 
   if (typeof enabled !== 'boolean') throw new Error('Invalid noise filter setting.');
   appSettings.noiseFilter = enabled;
   writeSettings(appSettings);
+});
+ipcMain.handle('settings:set-audio', (_event, patch: unknown): AppSettings => {
+  if (!patch || typeof patch !== 'object') throw new Error('Invalid audio settings.');
+  const value = patch as Partial<AppSettings>;
+  if (value.inputVolumeDb !== undefined) {
+    if (typeof value.inputVolumeDb !== 'number' || !Number.isFinite(value.inputVolumeDb)) throw new Error('Invalid input volume.');
+    appSettings.inputVolumeDb = Math.min(30, Math.max(-30, value.inputVolumeDb));
+  }
+  if (value.inputDeviceId !== undefined) appSettings.inputDeviceId = typeof value.inputDeviceId === 'string' && value.inputDeviceId ? value.inputDeviceId : null;
+  if (value.outputDeviceId !== undefined) appSettings.outputDeviceId = typeof value.outputDeviceId === 'string' && value.outputDeviceId ? value.outputDeviceId : null;
+  if (value.outputVolume !== undefined) {
+    if (typeof value.outputVolume !== 'number' || !Number.isFinite(value.outputVolume)) throw new Error('Invalid output volume.');
+    appSettings.outputVolume = Math.min(2, Math.max(0, value.outputVolume));
+  }
+  writeSettings(appSettings);
+  return { ...appSettings };
 });
 
 ipcMain.handle('backend:get-health', async (): Promise<{ status: 'alive' }> => {

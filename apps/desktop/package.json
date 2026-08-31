@@ -1,6 +1,6 @@
 {
   "name": "@brigames-station/desktop",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "brigames-station desktop application.",
   "author": {
@@ -32,7 +32,7 @@
     "@angular/core": "22.1.2",
     "@angular/forms": "22.1.2",
     "@angular/platform-browser": "22.1.2",
-    "@livekit/krisp-noise-filter": "^0.4.4",
+    "@jitsi/rnnoise-wasm": "^0.2.1",
     "@livekit/throws-transformer": "0.1.8",
     "electron-updater": "6.8.9",
     "livekit-client": "2.21.0",

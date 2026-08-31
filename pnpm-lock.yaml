@@ -25,9 +25,9 @@ importers:
       '@angular/platform-browser':
         specifier: 22.1.2
         version: 22.1.2(@angular/common@22.1.2(@angular/core@22.1.2(@angular/compiler@22.1.2)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.1.2(@angular/compiler@22.1.2)(rxjs@7.8.2)(zone.js@0.16.2))
-      '@livekit/krisp-noise-filter':
-        specifier: ^0.4.4
-        version: 0.4.4(livekit-client@2.21.0(@types/dom-mediacapture-record@1.0.22))
+      '@jitsi/rnnoise-wasm':
+        specifier: ^0.2.1
+        version: 0.2.1
       '@livekit/throws-transformer':
         specifier: 0.1.8
         version: 0.1.8(typescript@6.0.3)
@@ -652,6 +652,9 @@ packages:
     resolution: {integrity: sha512-wgm9Ehl2jpeqP3zw/7mo3kRHFp5MEDhqAdwy1fTGkHAwnkGOVsgpvQhL8B5n1qlb01jV3n/bI0ZfZp5lWA1k4w==}
     engines: {node: '>=18.0.0'}
 
+  '@jitsi/rnnoise-wasm@0.2.1':
+    resolution: {integrity: sha512-iEj77www43pS2Yq+cfLZb+hFuI7L5ccisBzzPMcOjjLsG4/LAlkD1CY58/8gc84nHdLBGmD/OPIWGnvYnXvB0A==}
+
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
 
@@ -671,11 +674,6 @@ packages:
     peerDependencies:
       '@inquirer/prompts': '>= 3 < 9'
       listr2: 10.2.1
-
-  '@livekit/krisp-noise-filter@0.4.4':
-    resolution: {integrity: sha512-ljnNPRE0W0IPuMcgRruQZaIz/zWCfqt9vQYXgX0WmojIbHlRrak7BW+FXW4KtXZKi+/dZPNuEL0c2v1wIHR5Cg==}
-    peerDependencies:
-      livekit-client: ^2.18.7
 
   '@livekit/mutex@1.1.1':
     resolution: {integrity: sha512-EsshAucklmpuUAfkABPxJNhzj9v2sG7JuzFDL4ML1oJQSV14sqrpTYnsaOudMAw9yOaW53NU3QQTlUQoRs4czw==}
@@ -3736,6 +3734,8 @@ snapshots:
     dependencies:
       minipass: 7.1.3
 
+  '@jitsi/rnnoise-wasm@0.2.1': {}
+
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
@@ -3757,12 +3757,6 @@ snapshots:
       listr2: 10.2.2
     transitivePeerDependencies:
       - '@types/node'
-
-  '@livekit/krisp-noise-filter@0.4.4(livekit-client@2.21.0(@types/dom-mediacapture-record@1.0.22))':
-    dependencies:
-      '@livekit/mutex': 1.1.1
-      '@livekit/protocol': 1.50.4
-      livekit-client: 2.21.0(@types/dom-mediacapture-record@1.0.22)
 
   '@livekit/mutex@1.1.1': {}
 

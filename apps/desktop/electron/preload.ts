@@ -52,9 +52,10 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   invites: { create: (serverID: number) => ipcRenderer.invoke('invites:create', serverID), createAndCopy: (serverID: number) => ipcRenderer.invoke('invites:create-and-copy', serverID), join: (code: string) => ipcRenderer.invoke('invites:join', code) },
   settings: {
-    get: (): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean }> => ipcRenderer.invoke('settings:get'),
+    get: (): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number }> => ipcRenderer.invoke('settings:get'),
     setHardwareAcceleration: (enabled: boolean): Promise<{ restartRequired: boolean }> => ipcRenderer.invoke('settings:set-hardware-acceleration', enabled),
     setNoiseFilter: (enabled: boolean): Promise<void> => ipcRenderer.invoke('settings:set-noise-filter', enabled),
+    setAudio: (patch: { inputVolumeDb?: number; inputDeviceId?: string | null; outputDeviceId?: string | null; outputVolume?: number }): Promise<void> => ipcRenderer.invoke('settings:set-audio', patch),
   },
   realtime: {
     onConnected: (callback: () => void): (() => void) => {
