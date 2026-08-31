@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, OnDestroy, OnInit, Renderer2, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Room, RoomEvent, Track } from 'livekit-client';
+import { deriveCallMiniPreviewModel, type CallMediaDescriptor } from './call-mini-preview-state';
 
 type BackendState = 'checking' | 'available' | 'unavailable';
 type User = { username: string; email: string; role: string };
@@ -11,6 +12,7 @@ type User = { username: string; email: string; role: string };
 export class AppComponent implements OnInit, OnDestroy {
   private readonly renderer = inject(Renderer2);
   private readonly dismissedUpdateVersion = signal<string | null>(null);
+  private readonly peerMediaRevision = signal(0);
   private readonly messageList = viewChild<ElementRef<HTMLElement>>('messageList');
 
   constructor() {
@@ -18,6 +20,11 @@ export class AppComponent implements OnInit, OnDestroy {
       this.messages();
       const element = this.messageList()?.nativeElement;
       if (element) requestAnimationFrame(() => { element.scrollTop = element.scrollHeight; });
+    });
+    effect(() => {
+      this.miniCallPreview();
+      this.peerMediaRevision();
+      this.schedulePeerMediaLayout();
     });
   }
   protected readonly macOS = navigator.userAgent.includes('Macintosh');
@@ -55,8 +62,31 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly cameraEffect = signal<CameraEffectID>('none');
   protected readonly voiceMediaActive = signal(false);
   protected readonly voiceMediaVisible = signal(false);
+  protected readonly voiceReconnecting = signal(false);
   protected readonly availablePeerMedia = signal<PeerMediaAvailability[]>([]);
   protected readonly featuredPeerMediaID = signal<string | null>(null);
+  protected readonly miniCallPreview = computed(() => {
+    this.peerMediaRevision();
+    const media: CallMediaDescriptor[] = this.peerMediaElements.map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      participantIdentity: item.participantIdentity,
+    }));
+    return deriveCallMiniPreviewModel({
+      connected: this.voiceChannel() !== null,
+      viewingActiveCall: this.voiceMediaVisible(),
+      reconnecting: this.voiceReconnecting(),
+      media,
+      featuredMediaID: this.featuredPeerMediaID(),
+      activeSpeakerIDs: this.activeSpeakerIDs(),
+    });
+  });
+  protected readonly miniCallParticipants = computed(() => this.voiceParticipants().slice(0, 3));
+  protected readonly miniCallActiveParticipant = computed(() => {
+    const participants = this.voiceParticipants();
+    return participants.find((participant) => this.activeSpeakerIDs().includes(participant.identity)) ?? participants[0] ?? null;
+  });
+  protected readonly miniCallActiveParticipantName = computed(() => this.miniCallActiveParticipant()?.name ?? 'Chamada de voz');
   protected readonly systemAudioSupported = navigator.userAgent.includes('Windows');
   protected shareSystemAudio = true;
   protected registrationMode = false;
@@ -222,9 +252,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   protected async selectChannel(channel: Channel): Promise<void> { if (channel.type !== 'text') return; this.voiceMediaVisible.set(false); this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
   protected async joinVoiceChannel(channel: Channel): Promise<void> {
-    if (this.voiceChannel()?.id === channel.id) { this.voiceMediaVisible.set(true); return; }
+    if (this.voiceChannel()?.id === channel.id) { await this.returnToVoiceCall(); return; }
     await this.leaveVoiceChannel(); this.loading.set(true); this.error.set('');
     this.voiceMediaVisible.set(true);
+    this.selectedChannel.set(null);
+    this.messages.set([]);
     try {
       const session = await window.desktop.voice.join(channel.id);
       const room = new Room();
@@ -259,10 +291,16 @@ export class AppComponent implements OnInit, OnDestroy {
       room.on(RoomEvent.TrackUnmuted, () => {
         refreshParticipants();
       });
-      room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => this.activeSpeakerIDs.set(speakers.map((speaker) => speaker.identity)));
+      room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+        this.activeSpeakerIDs.set(speakers.map((speaker) => speaker.identity));
+        this.schedulePeerMediaLayout();
+      });
+      room.on(RoomEvent.Reconnecting, () => this.voiceReconnecting.set(true));
+      room.on(RoomEvent.Reconnected, () => this.voiceReconnecting.set(false));
       room.on(RoomEvent.Disconnected, () => {
         this.voiceRoom = undefined;
         this.voiceChannel.set(null);
+        this.voiceReconnecting.set(false);
         this.voiceParticipants.set([]);
         this.activeSpeakerIDs.set([]);
         this.screenSharing.set(false);
@@ -297,6 +335,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.voiceChannel.set(null);
     this.voiceParticipants.set([]);
     this.activeSpeakerIDs.set([]);
+    this.voiceReconnecting.set(false);
     this.microphoneMuted.set(false);
     this.screenSharing.set(false);
     this.cameraEnabled.set(false);
@@ -313,8 +352,19 @@ export class AppComponent implements OnInit, OnDestroy {
       try { await window.desktop.voice.setPresence(null); } catch { /* The WebSocket disconnect cleanup remains the fallback. */ }
     }
   }
+  protected async returnToVoiceCall(): Promise<void> {
+    const channel = this.voiceChannel();
+    if (!channel) return;
+    const server = this.servers().find((candidate) => candidate.id === channel.server_id);
+    if (server && this.selectedServer()?.id !== server.id) await this.selectServer(server);
+    if (this.voiceChannel()?.id !== channel.id) return;
+    this.selectedChannel.set(null);
+    this.messages.set([]);
+    this.voiceMediaVisible.set(true);
+    this.schedulePeerMediaLayout();
+  }
   protected async toggleMicrophone(): Promise<void> { if (!this.voiceRoom) return; const muted = !this.microphoneMuted(); await this.voiceRoom.localParticipant.setMicrophoneEnabled(!muted); this.microphoneMuted.set(muted); this.playVoiceSound(muted ? 'mute' : 'unmute'); }
-  protected async toggleCamera(): Promise<void> {
+  protected async toggleCamera(preserveNavigation = false): Promise<void> {
     if (!this.voiceRoom) return;
     this.loading.set(true); this.error.set('');
     try {
@@ -322,7 +372,7 @@ export class AppComponent implements OnInit, OnDestroy {
       if (enabled) await this.publishPeerMedia('camera', this.startCameraEffectPipeline(await navigator.mediaDevices.getUserMedia({ video: { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 24 } }, audio: false })));
       else await this.stopLocalPeerMedia('camera');
       this.cameraEnabled.set(enabled);
-      if (enabled) this.voiceMediaVisible.set(true);
+      if (enabled && !preserveNavigation) this.voiceMediaVisible.set(true);
     } catch (error) { this.error.set(this.messageFor(error, 'Unable to change the camera state.')); }
     finally { this.loading.set(false); }
   }
@@ -773,6 +823,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.availablePeerMedia.set([]);
     this.featuredPeerMediaID.set(null);
     this.voiceMediaActive.set(false);
+    this.peerMediaRevision.update((revision) => revision + 1);
     this.updatePeerMediaLayout();
   }
   private addPeerMediaVideo(id: string, stream: MediaStream, kind: PeerMediaKind, name: string, remoteMedia?: PeerMediaAvailability, local = false): void {
@@ -803,7 +854,10 @@ export class AppComponent implements OnInit, OnDestroy {
     const highlightButton = this.renderer.createElement('button') as HTMLButtonElement;
     highlightButton.type = 'button';
     highlightButton.className = 'voice-media-highlight';
-    highlightButton.addEventListener('click', () => this.togglePeerMediaFeatured(element.dataset['mediaId'] ?? id));
+    highlightButton.addEventListener('click', () => {
+      if (this.miniCallPreview().visible) void this.returnToVoiceCall();
+      else this.togglePeerMediaFeatured(element.dataset['mediaId'] ?? id);
+    });
     element.append(video, highlightButton, label);
     let previewButton: HTMLButtonElement | undefined;
     if (local) {
@@ -826,8 +880,12 @@ export class AppComponent implements OnInit, OnDestroy {
       element.append(effectButton);
     }
     if (remoteMedia) element.append(this.createStopWatchingOverlay(remoteMedia));
-    this.peerMediaElements.push({ id, element, video, label, highlightButton, previewButton, effectButton });
-    this.voiceMediaActive.set(true); this.voiceMediaVisible.set(true);
+    this.peerMediaElements.push({
+      id, element, video, label, highlightButton, previewButton, effectButton, kind,
+      participantIdentity: remoteMedia ? String(remoteMedia.userID) : this.voiceRoom?.localParticipant.identity ?? String(this.currentUserID()),
+    });
+    this.peerMediaRevision.update((revision) => revision + 1);
+    this.voiceMediaActive.set(true);
     setTimeout(() => this.updatePeerMediaLayout(), 0);
   }
   private startCameraEffectPipeline(source: MediaStream): MediaStream {
@@ -997,6 +1055,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.peerMediaElements = this.peerMediaElements.filter((candidate) => candidate.id !== id);
     if (this.featuredPeerMediaID() === id || this.peerMediaElements.length < 2) this.featuredPeerMediaID.set(null);
     this.voiceMediaActive.set(this.peerMediaElements.length > 0);
+    this.peerMediaRevision.update((revision) => revision + 1);
     this.updatePeerMediaLayout();
   }
   private togglePeerMediaFeatured(id: string): void {
@@ -1013,22 +1072,29 @@ export class AppComponent implements OnInit, OnDestroy {
       const layout = document.getElementById('voice-media-layout');
       const grid = document.getElementById('voice-media-grid');
       if (!layout || !grid) return;
+      const miniHost = document.getElementById('call-mini-media-host');
+      const miniPreview = this.miniCallPreview();
+      const miniMediaID = miniPreview.visible ? miniPreview.mediaID : null;
       const featured = this.peerMediaElements.find((item) => item.id === this.featuredPeerMediaID());
       if ((!featured && this.featuredPeerMediaID()) || this.peerMediaElements.length < 2) this.featuredPeerMediaID.set(null);
       const hasFeatured = Boolean(featured && this.peerMediaElements.length > 1);
       grid.style.setProperty('--voice-media-secondary-count', String(Math.max(1, this.peerMediaElements.length - 1)));
       for (const item of this.peerMediaElements) {
-        if (item.element.parentElement !== grid) grid.appendChild(item.element);
-        const selected = hasFeatured && item === featured;
+        const inMiniPreview = item.id === miniMediaID && miniHost !== null;
+        const parent = inMiniPreview ? miniHost : grid;
+        if (item.element.parentElement !== parent) parent.appendChild(item.element);
+        const selected = !inMiniPreview && hasFeatured && item === featured;
+        item.element.classList.toggle('mini-call-media', inMiniPreview);
         item.element.classList.toggle('featured', selected);
-        item.highlightButton.title = selected ? 'Clique para remover o destaque' : 'Clique para destacar';
-        item.highlightButton.setAttribute('aria-label', selected ? 'Remover destaque desta transmissão' : 'Destacar esta transmissão');
+        item.highlightButton.title = inMiniPreview ? 'Voltar para a chamada' : selected ? 'Clique para remover o destaque' : 'Clique para destacar';
+        item.highlightButton.setAttribute('aria-label', inMiniPreview ? 'Voltar para a chamada ativa' : selected ? 'Remover destaque desta transmissão' : 'Destacar esta transmissão');
         item.highlightButton.setAttribute('aria-pressed', String(selected));
       }
     };
     apply();
     setTimeout(apply, 0);
   }
+  private schedulePeerMediaLayout(): void { setTimeout(() => this.updatePeerMediaLayout(), 0); }
   private currentUserID(): number { return this.members().find((member) => member.username === this.user()?.username)?.id ?? 0; }
   protected isSpeaking(participant: VoiceParticipant): boolean { return this.activeSpeakerIDs().includes(participant.identity); }
   protected voiceMembers(channelID: number): ServerMember[] { return this.members().filter((member) => member.voice_channel_id === channelID); }
@@ -1137,7 +1203,7 @@ type IncomingPeerSignal = { channel_id: number; from_user_id: number; kind: Peer
 type PeerMediaAvailability = { channelID: number; userID: number; name: string; kind: PeerMediaKind };
 type PeerMediaConnection = { sessionID: string; connection: RTCPeerConnection; direction: PeerDirection; remoteUserID: number; kind: PeerMediaKind; pendingCandidates: RTCIceCandidateInit[]; disconnectTimer?: ReturnType<typeof setTimeout> };
 type PendingPeerCandidates = { remoteUserID: number; kind: PeerMediaKind; candidates: RTCIceCandidateInit[] };
-type PeerMediaElement = { id: string; element: HTMLElement; video: HTMLVideoElement; label: HTMLSpanElement; highlightButton: HTMLButtonElement; previewButton?: HTMLButtonElement; effectButton?: HTMLButtonElement };
+type PeerMediaElement = { id: string; element: HTMLElement; video: HTMLVideoElement; label: HTMLSpanElement; highlightButton: HTMLButtonElement; previewButton?: HTMLButtonElement; effectButton?: HTMLButtonElement; kind: PeerMediaKind; participantIdentity: string };
 type CameraEffectPipeline = { source: MediaStream; video: HTMLVideoElement; canvas: HTMLCanvasElement; context: CanvasRenderingContext2D; running: boolean };
 type CameraEffectID = 'none' | 'grayscale' | 'sepia' | 'invert' | 'vintage' | 'cold';
 

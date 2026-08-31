@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./out/call-preview-tests",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
+  },
+  "include": [
+    "src/app/call-mini-preview-state.ts",
+    "tests/call-mini-preview-state.test.ts"
+  ],
+  "exclude": []
+}

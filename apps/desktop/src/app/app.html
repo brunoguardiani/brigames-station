@@ -83,11 +83,22 @@
       <footer class="account-bar"><div class="avatar">{{ user()!.username.slice(0, 1).toUpperCase() }}</div><div><strong>{{ user()!.username }}</strong><small>{{ user()!.role }}</small></div><button type="button" title="Configurações" aria-label="Abrir configurações" (click)="openSettings()"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg></button><button type="button" title="Log out" (click)="logout()">⇥</button></footer>
     </aside>
 
-    <section class="conversation-panel" [class.voice-media-active]="voiceMediaActive() && voiceMediaVisible()">
+    <section class="conversation-panel" [class.voice-media-active]="voiceChannel() !== null && voiceMediaVisible()">
       @if (voiceChannel()) {
         <section class="voice-video-stage" aria-label="Vídeos do canal de voz">
-          <div id="voice-media-layout" class="voice-media-layout" [class.has-featured]="featuredPeerMediaID() !== null">
+          <div id="voice-media-layout" class="voice-media-layout" [class.has-media]="voiceMediaActive()" [class.has-featured]="featuredPeerMediaID() !== null">
             <div id="voice-media-grid" class="voice-media-grid" aria-label="Transmissões em exibição"></div>
+            @if (!voiceMediaActive()) {
+              <section class="voice-only-stage" aria-label="Chamada de voz ativa">
+                <div class="voice-only-avatars" aria-hidden="true">
+                  @for (participant of miniCallParticipants(); track participant.identity) {
+                    <span [class.speaking]="isSpeaking(participant)">{{ participant.name.slice(0, 1).toUpperCase() }}</span>
+                  }
+                </div>
+                <h2>{{ voiceChannel()!.name }}</h2>
+                <p>{{ voiceReconnecting() ? 'Reconectando à chamada…' : 'Chamada de voz em andamento' }}</p>
+              </section>
+            }
           </div>
         </section>
       }
@@ -98,6 +109,42 @@
       } @else { <section class="workspace-empty"><img class="brand large" src="assets/brigames-station-icon.png" alt=""><h1>Welcome to brigames-station</h1><p>Select a server and channel to begin a conversation.</p></section> }
     </section>
     <aside class="members-sidebar" aria-label="Membros do servidor">@if (selectedServer()) { <header><strong>Membros</strong><span>{{ members().length }}</span></header><div class="member-list">@for (member of members(); track member.id) { <div class="member" [class.online]="member.online"><span class="member-avatar">{{ member.username.slice(0, 1).toUpperCase() }}</span><div><strong>{{ member.username }}</strong><small>{{ member.online ? 'online' : 'offline' }}</small></div><span class="presence-dot" [class.online]="member.online"></span></div> }</div> }</aside>
+    @if (miniCallPreview(); as preview) {
+      @if (preview.visible && voiceChannel(); as channel) {
+        <aside class="call-mini-preview" [class.reconnecting]="preview.state === 'reconnecting'" aria-label="Prévia da chamada em andamento">
+          <header class="call-mini-header">
+            <span class="call-mini-live-dot" aria-hidden="true"></span>
+            <div><strong>{{ channel.name }}</strong><small>{{ preview.state === 'reconnecting' ? 'Reconectando…' : 'Chamada em andamento' }}</small></div>
+            <button type="button" title="Voltar para a chamada" aria-label="Voltar para a chamada ativa" (click)="returnToVoiceCall()">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/><path d="M9 12h10"/></svg>
+            </button>
+          </header>
+          <div class="call-mini-viewport" [class.has-video]="preview.mediaID !== null">
+            <div id="call-mini-media-host" class="call-mini-media-host"></div>
+            @if (preview.mediaID === null) {
+              <button class="call-mini-voice-fallback" type="button" aria-label="Voltar para a chamada ativa" (click)="returnToVoiceCall()">
+                <span class="call-mini-avatars" aria-hidden="true">
+                  @for (participant of miniCallParticipants(); track participant.identity) {
+                    <span [class.speaking]="isSpeaking(participant)">{{ participant.name.slice(0, 1).toUpperCase() }}</span>
+                  }
+                </span>
+                <strong>{{ preview.state === 'reconnecting' ? 'Reconectando…' : miniCallActiveParticipantName() }}</strong>
+                <small>{{ preview.state === 'reconnecting' ? 'Tentando restabelecer a conexão' : 'Clique para voltar à chamada' }}</small>
+              </button>
+            }
+          </div>
+          <footer class="call-mini-controls" aria-label="Controles da chamada">
+            <button type="button" [class.active]="microphoneMuted()" [title]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" [attr.aria-label]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" (click)="toggleMicrophone()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg></button>
+            <button type="button" [class.active]="cameraEnabled()" [title]="cameraEnabled() ? 'Desativar câmera' : 'Ativar câmera'" [attr.aria-label]="cameraEnabled() ? 'Desativar câmera' : 'Ativar câmera'" (click)="toggleCamera(true)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 10 4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg></button>
+            @if (screenSharing()) {
+              <button class="active" type="button" title="Parar compartilhamento de tela" aria-label="Parar compartilhamento de tela" (click)="stopScreenShare()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="m8 21 4-4 4 4"/><path d="M12 17v4"/></svg></button>
+            }
+            <button class="call-mini-return" type="button" title="Voltar para a chamada" aria-label="Voltar para a chamada ativa" (click)="returnToVoiceCall()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16"/><path d="m14 6 6 6-6 6"/></svg></button>
+            <button class="call-mini-leave" type="button" title="Sair da chamada" aria-label="Sair da chamada" (click)="leaveVoiceChannel()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72"/><path d="m3 3 18 18"/></svg></button>
+          </footer>
+        </aside>
+      }
+    }
   } @else {
     <section class="login-view"><div class="login-intro"><img class="login-mascot" src="assets/brigames-station-mascot.png" alt="Mascote brigames-station"><p class="login-quote">“Queres ser baitado?” - Britt1n</p><span class="connection-status" [class.available]="status() === 'available'">Backend {{ status() }}</span></div><form class="login-card" (ngSubmit)="registrationMode ? register() : login()"><h2>{{ registrationMode ? 'Create an account' : 'Welcome back' }}</h2><p>{{ registrationMode ? 'Join your group on brigames-station.' : 'Sign in to continue to your servers.' }}</p>@if (registrationMode) { <label>Username<input name="username" [(ngModel)]="username" autocomplete="username" required autofocus maxlength="64"></label><label>Email<input name="email" [(ngModel)]="email" type="email" autocomplete="email" required maxlength="254"></label> } @else { <label>Username or email<input name="identity" [(ngModel)]="identity" autocomplete="username" required autofocus></label> }<label>Password<input name="password" [(ngModel)]="password" type="password" [attr.autocomplete]="registrationMode ? 'new-password' : 'current-password'" required></label>@if (registrationMode) { <label>Confirm password<input name="passwordConfirmation" [(ngModel)]="passwordConfirmation" type="password" autocomplete="new-password" required></label> }<button type="submit" [disabled]="loading()">{{ loading() ? (registrationMode ? 'Creating account...' : 'Signing in...') : (registrationMode ? 'Create account' : 'Sign in') }}</button><button class="auth-mode-toggle" type="button" [disabled]="loading()" (click)="toggleRegistrationMode()">{{ registrationMode ? 'Already have an account? Sign in' : 'Create an account' }}</button></form></section>
   }
