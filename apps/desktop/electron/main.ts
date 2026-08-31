@@ -94,7 +94,8 @@ type ServerMember = { id: number; username: string; role: 'owner' | 'member'; on
 type Channel = { id: number; server_id: number; name: string; type: 'text' | 'voice'; position: number; created_by: number; created_at: string };
 type Message = { id: number; channel_id: number; author_id: number; author_username: string; content: string; created_at: string };
 type MessagePage = { messages: Message[]; next_before: number | null };
-type DisplaySource = { id: string; name: string; thumbnail: string; kind: 'screen' | 'window' };
+type DisplaySourceCategory = 'window' | 'screen' | 'application';
+type DisplaySource = { id: string; name: string; thumbnail: string; icon?: string; kind: 'screen' | 'window'; category: DisplaySourceCategory };
 type VoicePresenceChanged = { server_id: number; user_id: number; channel_id: number | null };
 type WebRTCSignalKind = 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch';
 type WebRTCSignal = { channel_id: number; to_user_id: number; kind: WebRTCSignalKind; session_id?: string; payload: unknown };
@@ -547,8 +548,19 @@ ipcMain.handle('screen-share:list-sources', async (event): Promise<DisplaySource
   const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } });
   cachedDisplaySources = sources;
   return sources
-    .map((source) => ({ id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL(), kind: source.id.startsWith('screen:') ? 'screen' as const : 'window' as const }))
-    .sort((left, right) => Number(right.kind === 'screen') - Number(left.kind === 'screen'));
+    .map((source): DisplaySource => {
+      const kind = source.id.startsWith('screen:') ? 'screen' as const : 'window' as const;
+      const icon = source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : undefined;
+      return {
+        id: source.id,
+        name: source.name,
+        thumbnail: source.thumbnail.toDataURL(),
+        icon,
+        kind,
+        category: kind === 'screen' ? 'screen' : icon ? 'application' : 'window',
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
 });
 ipcMain.handle('screen-share:select-source', async (event, sourceID: unknown): Promise<void> => {
   if (!isTrustedRendererURL(event.sender.getURL()) || typeof sourceID !== 'string' || !sourceID) throw new Error('Invalid screen-share source.');

@@ -52,6 +52,8 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly microphoneMuted = signal(false);
   protected readonly screenSharePickerOpen = signal(false);
   protected readonly screenShareSources = signal<ScreenShareSource[]>([]);
+  protected readonly screenShareCategory = signal<ScreenShareSourceCategory>('window');
+  protected readonly visibleScreenShareSources = computed(() => this.screenShareSources().filter((source) => source.category === this.screenShareCategory()));
   protected readonly screenSharing = signal(false);
   protected readonly cameraEnabled = signal(false);
   protected readonly screenPreviewEnabled = signal(false);
@@ -387,12 +389,15 @@ export class AppComponent implements OnInit, OnDestroy {
         return;
       }
       this.screenShareSources.set(sources);
+      this.screenShareCategory.set((['window', 'screen', 'application'] as const).find((category) => sources.some((source) => source.category === category)) ?? 'window');
       this.screenSharePickerOpen.set(true);
     }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to list screens for sharing.')); }
     finally { this.loading.set(false); }
   }
   protected cancelScreenSharePicker(): void { this.screenSharePickerOpen.set(false); }
+  protected selectScreenShareCategory(category: ScreenShareSourceCategory): void { this.screenShareCategory.set(category); }
+  protected screenShareSourceCount(category: ScreenShareSourceCategory): number { return this.screenShareSources().filter((source) => source.category === category).length; }
   protected async startScreenShare(source: ScreenShareSource): Promise<void> {
     if (!this.voiceRoom) return;
     this.loading.set(true); this.error.set('');
@@ -1195,7 +1200,8 @@ export class AppComponent implements OnInit, OnDestroy {
 }
 
 type VoiceParticipant = { identity: string; name: string; muted: boolean };
-type ScreenShareSource = { id: string; name: string; thumbnail: string; kind: 'screen' | 'window' };
+type ScreenShareSourceCategory = 'window' | 'screen' | 'application';
+type ScreenShareSource = { id: string; name: string; thumbnail: string; icon?: string; kind: 'screen' | 'window'; category: ScreenShareSourceCategory };
 type PeerMediaKind = 'camera' | 'screen';
 type PeerDirection = 'incoming' | 'outgoing';
 type PeerSignalKind = 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch';

@@ -152,11 +152,21 @@
     <section class="modal-backdrop" (click)="cancelScreenSharePicker()">
       <section class="screen-share-modal" role="dialog" aria-modal="true" aria-labelledby="screen-share-title" (click)="$event.stopPropagation()">
         <h2 id="screen-share-title">Compartilhar tela</h2>
-        <p>Escolha a tela ou janela que deseja mostrar no canal de voz.</p>
+        <p>Escolha uma janela, tela inteira ou aplicativo para mostrar no canal de voz.</p>
         @if (systemAudioSupported) { <label class="screen-audio-option"><input type="checkbox" name="shareSystemAudio" [(ngModel)]="shareSystemAudio"> Compartilhar áudio do sistema</label> }
-        <div class="screen-source-list">
-          @for (source of screenShareSources(); track source.id) {
-            <button type="button" (click)="startScreenShare(source)" [disabled]="loading()"><img [src]="source.thumbnail" alt=""><span><strong>{{ source.kind === 'screen' ? 'Tela inteira' : 'Janela' }}</strong>{{ source.name }}</span></button>
+        <nav class="screen-source-tabs" role="tablist" aria-label="Tipos de compartilhamento">
+          <button type="button" role="tab" [class.active]="screenShareCategory() === 'window'" [attr.aria-selected]="screenShareCategory() === 'window'" (click)="selectScreenShareCategory('window')">Janelas <span>{{ screenShareSourceCount('window') }}</span></button>
+          <button type="button" role="tab" [class.active]="screenShareCategory() === 'screen'" [attr.aria-selected]="screenShareCategory() === 'screen'" (click)="selectScreenShareCategory('screen')">Telas <span>{{ screenShareSourceCount('screen') }}</span></button>
+          <button type="button" role="tab" [class.active]="screenShareCategory() === 'application'" [attr.aria-selected]="screenShareCategory() === 'application'" (click)="selectScreenShareCategory('application')">Aplicativos <span>{{ screenShareSourceCount('application') }}</span></button>
+        </nav>
+        <div class="screen-source-list" role="tabpanel">
+          @for (source of visibleScreenShareSources(); track source.id) {
+            <button type="button" (click)="startScreenShare(source)" [disabled]="loading()">
+              <span class="screen-source-preview"><img [src]="source.thumbnail" alt="">@if (source.icon) { <img class="screen-source-app-icon" [src]="source.icon" alt=""> }</span>
+              <span><strong>{{ source.category === 'screen' ? 'Tela inteira' : source.category === 'application' ? 'Aplicativo' : 'Janela' }}</strong>{{ source.name }}</span>
+            </button>
+          } @empty {
+            <p class="screen-source-empty">Nenhuma opção disponível nesta categoria.</p>
           }
         </div>
         <div class="confirmation-actions"><button type="button" (click)="cancelScreenSharePicker()">Cancelar</button></div>
