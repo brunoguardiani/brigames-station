@@ -1,6 +1,6 @@
 {
   "name": "@brigames-station/desktop",
-  "version": "1.0.7",
+  "version": "1.0.9",
   "private": true,
   "description": "brigames-station desktop application.",
   "author": {
@@ -16,11 +16,12 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "build": "ng build && tsc -p electron/tsconfig.json",
+    "test:updater": "tsc -p electron/tsconfig.test.json && node --test out/updater-tests/updater/updater.service.test.js",
     "serve": "ng serve --host 127.0.0.1 --port 4200",
     "electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js",
     "dist:win": "pnpm run build && electron-builder --win nsis --x64 --publish never",
     "prepare:mac-icon": "sh scripts/create-macos-icon.sh",
-    "dist:mac": "pnpm run build && pnpm run prepare:mac-icon && electron-builder --mac dmg --x64 --arm64 --publish never",
+    "dist:mac": "pnpm run build && pnpm run prepare:mac-icon && electron-builder --mac dmg zip --x64 --arm64 --publish never",
     "dist:linux": "pnpm run build && electron-builder --linux AppImage deb --x64 --publish never"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "@angular/forms": "22.1.2",
     "@angular/platform-browser": "22.1.2",
     "@livekit/throws-transformer": "0.1.8",
+    "electron-updater": "6.8.9",
     "livekit-client": "2.21.0",
     "rxjs": "^7.8.2",
     "tslib": "^2.8.1",
@@ -49,6 +51,13 @@
     "appId": "com.brigames-station.desktop",
     "productName": "brigames-station",
     "executableName": "brigames-station",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "brunoguardiani",
+        "repo": "brigames-station"
+      }
+    ],
     "directories": {
       "buildResources": "build",
       "output": "release"
@@ -86,6 +95,10 @@
       "target": [
         {
           "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
           "arch": ["x64", "arm64"]
         }
       ],

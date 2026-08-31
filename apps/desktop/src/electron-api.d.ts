@@ -2,10 +2,18 @@ interface BackendHealth {
   status: 'alive';
 }
 
+type DesktopUpdaterStatus = import('../electron/updater/updater.types').DesktopUpdaterStatus;
+
 interface Window {
   desktop: {
     backend: {
       getHealth(): Promise<BackendHealth>;
+    };
+    updater: {
+      getStatus(): Promise<DesktopUpdaterStatus>;
+      checkForUpdates(): Promise<DesktopUpdaterStatus>;
+      installUpdate(): Promise<boolean>;
+      onStatusChange(callback: (status: DesktopUpdaterStatus) => void): () => void;
     };
     auth: {
       login(identity: string, password: string): Promise<{ username: string; email: string; role: string }>;

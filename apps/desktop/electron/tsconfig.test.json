@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../out/updater-tests"
+  },
+  "include": ["updater/**/*.ts"],
+  "exclude": []
+}

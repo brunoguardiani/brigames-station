@@ -60,6 +60,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm --filter @brigames-station/desktop run test:updater
+
       - run: pnpm --filter @brigames-station/desktop run dist:win
 
       - name: Create SHA-256 checksum
@@ -75,6 +77,8 @@ jobs:
           path: |
             apps/desktop/release/brigames-station-Setup-${{ needs.version.outputs.value }}.exe
             apps/desktop/release/brigames-station-Setup-${{ needs.version.outputs.value }}.exe.sha256
+            apps/desktop/release/brigames-station-Setup-${{ needs.version.outputs.value }}.exe.blockmap
+            apps/desktop/release/latest.yml
           if-no-files-found: error
           retention-days: 90
 
@@ -105,7 +109,7 @@ jobs:
       - name: Create SHA-256 checksums
         shell: bash
         run: |
-          for installer in apps/desktop/release/*.dmg; do
+          for installer in apps/desktop/release/*.dmg apps/desktop/release/*.zip; do
             checksum=$(shasum -a 256 "$installer" | awk '{print $1}')
             printf '%s  %s\n' "$checksum" "$(basename "$installer")" > "$installer.sha256"
           done
@@ -116,6 +120,10 @@ jobs:
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.dmg.sha256
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.zip.sha256
+            apps/desktop/release/*.zip.blockmap
+            apps/desktop/release/latest-mac.yml
           if-no-files-found: error
           retention-days: 90
 
@@ -166,6 +174,7 @@ jobs:
             apps/desktop/release/*.AppImage.sha256
             apps/desktop/release/*.deb
             apps/desktop/release/*.deb.sha256
+            apps/desktop/release/latest-linux.yml
           if-no-files-found: error
           retention-days: 90
 
@@ -179,6 +188,32 @@ jobs:
         with:
           path: release-artifacts
           merge-multiple: true
+
+      - name: Validate auto-update metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f release-artifacts/latest.yml
+          test -f release-artifacts/latest-mac.yml
+          test -f release-artifacts/latest-linux.yml
+
+          windows_path=$(sed -n 's/^path: //p' release-artifacts/latest.yml | head -n 1)
+          mac_path=$(sed -n 's/^path: //p' release-artifacts/latest-mac.yml | head -n 1)
+          linux_path=$(sed -n 's/^path: //p' release-artifacts/latest-linux.yml | head -n 1)
+
+          test -n "$windows_path" && test -f "release-artifacts/$windows_path"
+          test -n "$mac_path" && test -f "release-artifacts/$mac_path"
+          test -n "$linux_path" && test -f "release-artifacts/$linux_path"
+          test -f "release-artifacts/$windows_path.blockmap"
+          test -f "release-artifacts/$mac_path.blockmap"
+
+          shopt -s nullglob
+          mac_payloads=(release-artifacts/*.zip)
+          test "${#mac_payloads[@]}" -gt 0
+          for payload in "${mac_payloads[@]}"; do
+            test -f "$payload.blockmap"
+          done
 
       - name: Create private GitHub release
         env:

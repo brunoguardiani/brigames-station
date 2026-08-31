@@ -9,5 +9,6 @@
     "types": ["node"],
     "outDir": "../dist-electron"
   },
-  "include": ["*.ts"]
+  "include": ["**/*.ts"],
+  "exclude": ["**/*.test.ts"]
 }

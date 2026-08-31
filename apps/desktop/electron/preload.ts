@@ -1,8 +1,20 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+import { DESKTOP_UPDATER_CHANNELS, DesktopUpdaterStatus } from './updater/updater.types';
+
 contextBridge.exposeInMainWorld('desktop', {
   backend: {
     getHealth: (): Promise<{ status: 'alive' }> => ipcRenderer.invoke('backend:get-health'),
+  },
+  updater: {
+    getStatus: (): Promise<DesktopUpdaterStatus> => ipcRenderer.invoke(DESKTOP_UPDATER_CHANNELS.getStatus),
+    checkForUpdates: (): Promise<DesktopUpdaterStatus> => ipcRenderer.invoke(DESKTOP_UPDATER_CHANNELS.checkForUpdates),
+    installUpdate: (): Promise<boolean> => ipcRenderer.invoke(DESKTOP_UPDATER_CHANNELS.installUpdate),
+    onStatusChange: (callback: (status: DesktopUpdaterStatus) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: DesktopUpdaterStatus) => callback(status);
+      ipcRenderer.on(DESKTOP_UPDATER_CHANNELS.statusChanged, listener);
+      return () => ipcRenderer.removeListener(DESKTOP_UPDATER_CHANNELS.statusChanged, listener);
+    },
   },
   auth: {
     login: (identity: string, password: string) => ipcRenderer.invoke('auth:login', identity, password),

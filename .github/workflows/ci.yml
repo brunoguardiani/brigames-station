@@ -81,6 +81,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @brigames-station/desktop run test:updater
       - run: pnpm --filter @brigames-station/desktop run dist:win
       - uses: actions/upload-artifact@v4
         with:

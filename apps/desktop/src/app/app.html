@@ -117,5 +117,39 @@
     </section>
   }
   @if (leaveConfirmationOpen()) { <section class="modal-backdrop" (click)="cancelLeaveServer()"><section class="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="leave-confirmation-title" (click)="$event.stopPropagation()"><h2 id="leave-confirmation-title">Sair de {{ selectedServer()?.name }}?</h2><p>Você perderá acesso aos canais deste server e precisará de um novo convite para entrar novamente.</p><div class="confirmation-actions"><button type="button" (click)="cancelLeaveServer()">Cancelar</button><button class="confirm-leave" type="button" (click)="confirmLeaveServer()" [disabled]="loading()">Sair do server</button></div></section></section> }
-  @if (error()) { <p class="error-toast" role="alert">{{ error() }}</p> }
+  @if (updaterNoticeVisible() || error()) {
+    <section class="notification-stack" aria-label="Notificações do aplicativo">
+      @if (updaterNoticeVisible()) {
+        @if (updaterStatus(); as update) {
+          <aside class="update-notice" role="status" aria-live="polite">
+            <div class="update-notice-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            </div>
+            <div class="update-notice-content">
+              @switch (update.state) {
+                @case ('update-available') {
+                  <strong>Atualização {{ update.version }} disponível</strong>
+                  <p>O download foi iniciado em segundo plano.</p>
+                }
+                @case ('download-progress') {
+                  <div class="update-notice-heading"><strong>Baixando a versão {{ update.version }}</strong><span>{{ update.percent.toFixed(0) }}%</span></div>
+                  <progress max="100" [value]="update.percent" [attr.aria-label]="'Progresso do download da versão ' + update.version"></progress>
+                  <p>Você pode continuar usando o aplicativo normalmente.</p>
+                }
+                @case ('update-downloaded') {
+                  <strong>Versão {{ update.version }} pronta</strong>
+                  <p>Reinicie agora para aplicar a atualização ou continue e instale ao sair.</p>
+                  <div class="update-notice-actions">
+                    <button class="update-later" type="button" (click)="deferDownloadedUpdate(update.version)">Depois</button>
+                    <button class="update-install" type="button" [disabled]="installingUpdate()" (click)="restartAndInstallUpdate()">{{ installingUpdate() ? 'Reiniciando…' : 'Reiniciar e atualizar' }}</button>
+                  </div>
+                }
+              }
+            </div>
+          </aside>
+        }
+      }
+      @if (error()) { <p class="error-toast" role="alert">{{ error() }}</p> }
+    </section>
+  }
 </main>

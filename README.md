@@ -135,7 +135,7 @@ Run it from the repository root on the target operating system:
 | Build machine | Generated artifacts in `apps/desktop/release/` |
 | --- | --- |
 | Windows x64 | `brigames-station-Setup-<version>.exe` and `.exe.sha256` |
-| macOS Intel or Apple Silicon | Intel and Apple Silicon `.dmg` files, each with `.sha256` |
+| macOS Intel or Apple Silicon | Intel and Apple Silicon `.dmg` files, each with `.sha256`; ZIP payloads are also generated for the updater |
 | Linux x64 | `.AppImage` and `.deb` files, each with `.sha256` |
 
 The script intentionally builds only the current operating system. Generate a
@@ -147,7 +147,7 @@ Increase `version` in `apps/desktop/package.json` before distributing an
 update. The stable application identifier lets the Windows installer update an
 existing installation, while the higher version distinguishes the release.
 
-The first public builds are not code signed, so Windows may display an
+The first builds are not code signed, so Windows may display an
 "unknown publisher" warning. Distribute the installer only through a trusted
 channel and provide its SHA-256 checksum alongside the file.
 
@@ -160,7 +160,7 @@ is selected. The workflow creates a private GitHub Release with:
 
 - the Windows x64 installer and SHA-256 checksum;
 - macOS Apple Silicon (`arm64`) and Intel (`x64`) DMG installers, each with a
-  SHA-256 checksum;
+  SHA-256 checksum, plus the updater ZIP payloads and metadata;
 - Linux x64 AppImage and Debian (`.deb`) packages, each with a SHA-256
   checksum.
 
@@ -168,6 +168,25 @@ Download the correct installer and checksum from the Release and distribute
 them through a trusted channel. The macOS builds are not yet signed or
 notarized, so they are intended for controlled testing until Apple Developer
 signing is configured.
+
+## Desktop automatic updates
+
+Packaged Windows builds include a background updater. It checks shortly after
+startup and then only at a conservative interval, downloads a newer release in
+the background, and asks whether to restart and install it. Development runs do
+not contact the update provider. The Angular renderer accesses updater state
+only through the typed, context-isolated preload API.
+
+The release workflow publishes `latest*.yml` manifests and blockmaps alongside
+the installers. However, the current GitHub repository is private, and a
+private GitHub Release cannot be read anonymously by installed clients. Do not
+embed `GH_TOKEN` in the app. Automatic updates become operational only after
+the release assets are hosted on a publicly readable feed; manual installation
+continues to work in the meantime.
+
+See [`docs/desktop-auto-update.md`](docs/desktop-auto-update.md) for the release
+assets, public-feed decision, signing requirements, end-to-end test procedure,
+and macOS/Linux differences.
 
 ## Install on Pop!_OS / Debian / Ubuntu
 

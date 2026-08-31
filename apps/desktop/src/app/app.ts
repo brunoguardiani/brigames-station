@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, HostListener, OnDestroy, OnInit, Renderer2, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, OnDestroy, OnInit, Renderer2, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Room, RoomEvent, Track } from 'livekit-client';
 
@@ -10,6 +10,7 @@ type User = { username: string; email: string; role: string };
 })
 export class AppComponent implements OnInit, OnDestroy {
   private readonly renderer = inject(Renderer2);
+  private readonly dismissedUpdateVersion = signal<string | null>(null);
   protected readonly macOS = navigator.userAgent.includes('Macintosh');
   protected readonly status = signal<BackendState>('checking');
   protected readonly user = signal<User | null>(null);
@@ -20,7 +21,14 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly selectedChannel = signal<Channel | null>(null);
   protected readonly messages = signal<Message[]>([]);
   protected readonly error = signal('');
+  protected readonly updaterStatus = signal<DesktopUpdaterStatus | null>(null);
+  protected readonly updaterNoticeVisible = computed(() => {
+    const status = this.updaterStatus();
+    if (!status || !['update-available', 'download-progress', 'update-downloaded'].includes(status.state)) return false;
+    return !('version' in status && status.version === this.dismissedUpdateVersion());
+  });
   protected readonly loading = signal(false);
+  protected readonly installingUpdate = signal(false);
   protected readonly leaveConfirmationOpen = signal(false);
   protected readonly voiceChannel = signal<Channel | null>(null);
   protected readonly voiceParticipants = signal<VoiceParticipant[]>([]);
@@ -45,6 +53,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private removeRealtimePresenceListener?: () => void;
   private removeRealtimeVoicePresenceListener?: () => void;
   private removeWebRTCSignalListener?: () => void;
+  private removeUpdaterStatusListener?: () => void;
+  private updaterStatusRevision = 0;
   private voiceRoom?: Room;
   private voiceAudioElements: HTMLAudioElement[] = [];
   private peerMediaElements: PeerMediaElement[] = [];
@@ -58,6 +68,16 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     void this.refreshBackendStatus();
     void this.restoreSession();
+    this.removeUpdaterStatusListener = window.desktop.updater.onStatusChange((status) => {
+      this.updaterStatusRevision += 1;
+      this.applyUpdaterStatus(status);
+    });
+    const updaterStatusRevision = this.updaterStatusRevision;
+    void window.desktop.updater.getStatus()
+      .then((status) => {
+        if (this.updaterStatusRevision === updaterStatusRevision) this.applyUpdaterStatus(status);
+      })
+      .catch((error) => console.warn('[updater] could not read updater status', this.messageFor(error, 'Unknown updater error.')));
     this.healthCheckTimer = setInterval(() => void this.refreshBackendStatus(), 5_000);
     this.removeSessionExpiredListener = window.desktop.auth.onSessionExpired(() => {
       void this.leaveVoiceChannel();
@@ -105,7 +125,32 @@ export class AppComponent implements OnInit, OnDestroy {
     this.removeRealtimePresenceListener?.();
     this.removeRealtimeVoicePresenceListener?.();
     this.removeWebRTCSignalListener?.();
+    this.removeUpdaterStatusListener?.();
     void this.leaveVoiceChannel();
+  }
+
+  protected deferDownloadedUpdate(version: string): void {
+    this.dismissedUpdateVersion.set(version);
+  }
+
+  protected async restartAndInstallUpdate(): Promise<void> {
+    if (this.installingUpdate()) return;
+    this.installingUpdate.set(true);
+    try {
+      const installationStarted = await window.desktop.updater.installUpdate();
+      if (!installationStarted) this.error.set('A atualização ainda não está pronta para ser instalada.');
+    } catch (error) {
+      this.error.set(this.messageFor(error, 'Não foi possível iniciar a instalação da atualização.'));
+    } finally {
+      this.installingUpdate.set(false);
+    }
+  }
+
+  private applyUpdaterStatus(status: DesktopUpdaterStatus): void {
+    if ('version' in status && this.dismissedUpdateVersion() !== null && this.dismissedUpdateVersion() !== status.version) {
+      this.dismissedUpdateVersion.set(null);
+    }
+    this.updaterStatus.set(status);
   }
   @HostListener('document:click', ['$event'])
   protected closePopoversWhenClickingOutside(event: MouseEvent): void {

@@ -1,6 +1,12 @@
 import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, nativeImage, safeStorage } from 'electron';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { ElectronAutoUpdaterAdapter } from './updater/electron-updater-adapter';
+import { registerDesktopUpdaterIPC } from './updater/updater.ipc';
+import { DesktopUpdaterService } from './updater/updater.service';
+import { DESKTOP_UPDATER_CHANNELS } from './updater/updater.types';
 
 const backendURL = process.env['DESKTOP_BACKEND_URL'] ?? (app.isPackaged ? 'https://api.groupgo.com.br' : 'http://127.0.0.1:8080');
 const backendHealthURL = backendURL + '/health';
@@ -15,6 +21,7 @@ let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let refreshInFlight: Promise<void> | undefined;
 let realtimeRefreshRequired = false;
 let selectedDisplaySourceID: string | undefined;
+let primaryWindow: BrowserWindow | undefined;
 
 function desktopAssetPath(filename: string): string {
   const candidates = [
@@ -35,9 +42,24 @@ function splashMascotPath(): string {
 }
 
 function isTrustedRendererURL(url: string): boolean {
-  if (url.startsWith('file:')) return true;
   const rendererURL = process.env['ELECTRON_RENDERER_URL'];
-  return rendererURL !== undefined && url.startsWith(rendererURL);
+  if (rendererURL) {
+    try {
+      return new URL(url).origin === new URL(rendererURL).origin;
+    } catch {
+      return false;
+    }
+  }
+
+  try {
+    const actualPath = path.resolve(fileURLToPath(new URL(url)));
+    const expectedPath = path.resolve(__dirname, '..', 'dist', 'desktop', 'browser', 'index.html');
+    return process.platform === 'win32'
+      ? actualPath.toLowerCase() === expectedPath.toLowerCase()
+      : actualPath === expectedPath;
+  } catch {
+    return false;
+  }
 }
 
 type User = { username: string; email: string; role: string };
@@ -346,6 +368,10 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  primaryWindow = window;
+  window.once('closed', () => {
+    if (primaryWindow === window) primaryWindow = undefined;
+  });
   window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
     callback((permission === 'media' || permission === 'display-capture') && isTrustedRendererURL(webContents.getURL()));
   });
@@ -493,6 +519,18 @@ ipcMain.handle('invites:join', (_event, code: unknown): Promise<{ server_id: num
 app
   .whenReady()
   .then(async () => {
+    const desktopUpdater = new DesktopUpdaterService({
+      adapter: new ElectronAutoUpdaterAdapter(),
+      isPackaged: app.isPackaged,
+      currentVersion: app.getVersion(),
+      publishStatus: (status) => {
+        const window = primaryWindow;
+        if (!window || window.isDestroyed() || !isTrustedRendererURL(window.webContents.getURL())) return;
+        window.webContents.send(DESKTOP_UPDATER_CHANNELS.statusChanged, status);
+      },
+    });
+    registerDesktopUpdaterIPC(desktopUpdater, isTrustedRendererURL);
+
     const splash = createSplashWindow();
     const splashStartedAt = Date.now();
     await createWindow((window) => {
@@ -502,6 +540,11 @@ app
         if (!splash.isDestroyed()) splash.close();
       }, remainingSplashMilliseconds);
     });
+    try {
+      desktopUpdater.start();
+    } catch (error: unknown) {
+      console.error('[updater] initialization failed', error instanceof Error ? error.message : String(error));
+    }
 
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) {

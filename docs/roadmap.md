@@ -428,7 +428,7 @@ acceptance does not validate the new P2P path.
 ### Explicitly Out of Scope
 
 - LiveKit improvements, recording, Redis, and distributed presence.
-- Automatic desktop updates and mobile clients.
+- Mobile clients. Desktop automatic updates are tracked in Phase 13.
 
 ## Phase 11 - Linux Desktop Distribution
 
@@ -465,7 +465,7 @@ release workflow.
 
 ### Explicitly Out of Scope
 
-- Automatic in-app updates.
+- Automatic in-app updates are delivered separately in Phase 13.
 - Distribution through Snap Store, Flathub, or other public package stores.
 - Mobile clients.
 
@@ -491,3 +491,41 @@ remain appropriate as the application evolves.
 - Splitting the system into microservices.
 - Replacing the Go backend or Angular/Electron desktop stack without a
   validated technical reason.
+
+## Phase 13 - Desktop Automatic Updates
+
+Phase 13 implements the application and release-pipeline pieces for background
+desktop updates. Windows NSIS is the first supported runtime path. Production
+activation is pending a publicly readable release feed and a packaged
+old-version-to-new-version acceptance test.
+
+### Implemented - Pending Acceptance
+
+- [x] Add `electron-updater` as a runtime dependency and isolate update logic
+  from the Electron bootstrap.
+- [x] Keep update checks disabled in development and schedule conservative
+  automatic checks only for packaged applications.
+- [x] Download in the background, expose typed status through preload IPC, and
+  let the user restart immediately or defer installation.
+- [x] Add a discrete Angular update notice without exposing Node.js or provider
+  credentials to the renderer.
+- [x] Preserve `latest*.yml`, blockmaps, and macOS ZIP payloads in the manually
+  approved release workflow.
+- [x] Document versioning, release assets, signing, provider security, and
+  platform-specific constraints.
+
+### Required Before Production Activation
+
+- [ ] Host release manifests and payloads on a publicly readable GitHub or
+  generic HTTPS feed; never embed a private GitHub token in the application.
+- [ ] Install an older Windows release, publish a higher version, and validate
+  background download, deferral, restart, installation, and relaunch.
+- [ ] Configure a stable Windows code-signing identity in CI to remove the
+  unknown-publisher distribution risk.
+
+### Deferred Platform Acceptance
+
+- [ ] Sign and notarize macOS builds with a consistent identity before enabling
+  production macOS automatic updates.
+- [ ] Validate AppImage updates on the supported Linux distribution; continue
+  managing `.deb` updates through the package manager until then.
