@@ -42,7 +42,7 @@ interface Window {
       setPresence(channelID: number | null): Promise<void>;
     };
     screenShare: {
-      listSources(): Promise<Array<{ id: string; name: string; thumbnail: string; kind: 'screen' | 'window' }>>;
+      listSources(): Promise<Array<{ id: string; name: string; thumbnail: string; icon?: string; kind: 'screen' | 'window'; category: 'window' | 'screen' | 'application' }>>;
       selectSource(sourceID: string): Promise<void>;
     };
     invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; createAndCopy(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
