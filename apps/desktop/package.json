@@ -1,6 +1,6 @@
 {
   "name": "@brigames-station/desktop",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "private": true,
   "description": "brigames-station desktop application.",
   "author": {
@@ -32,6 +32,7 @@
     "@angular/core": "22.1.2",
     "@angular/forms": "22.1.2",
     "@angular/platform-browser": "22.1.2",
+    "@jitsi/rnnoise-wasm": "^0.2.1",
     "@livekit/throws-transformer": "0.1.8",
     "electron-updater": "6.8.9",
     "livekit-client": "2.21.0",
@@ -80,7 +81,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "src/assets/brigames-station-icon.png",
@@ -97,11 +100,17 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "build/brigames-station.icns",
@@ -115,11 +124,15 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "src/assets/brigames-station-icon.png",
