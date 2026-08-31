@@ -11,10 +11,16 @@ import { DESKTOP_UPDATER_CHANNELS } from './updater/updater.types';
 const backendURL = process.env['DESKTOP_BACKEND_URL'] ?? (app.isPackaged ? 'https://api.groupgo.com.br' : 'http://127.0.0.1:8080');
 const backendHealthURL = backendURL + '/health';
 const webRTCStunURL = process.env['WEBRTC_STUN_URL'] ?? 'stun:stun.cloudflare.com:3478';
+const debugEnabled = process.argv.includes('--debug') || process.env['BRIGAMES_DEBUG'] === '1';
 if (process.platform === 'win32') app.setAppUserModelId('com.brigames-station.desktop');
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+  app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer');
+}
 let accessToken: string | undefined;
 let accessTokenExpiresAt: number | undefined;
 let realtimeSocket: WebSocket | undefined;
+let realtimePingTimer: ReturnType<typeof setInterval> | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let reconnectDelayMilliseconds = 1_000;
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -22,6 +28,8 @@ let refreshInFlight: Promise<void> | undefined;
 let realtimeRefreshRequired = false;
 let selectedDisplaySourceID: string | undefined;
 let primaryWindow: BrowserWindow | undefined;
+let selectedDisplaySource: Electron.DesktopCapturerSource | undefined;
+let cachedDisplaySources: Electron.DesktopCapturerSource[] = [];
 
 function desktopAssetPath(filename: string): string {
   const candidates = [
@@ -121,11 +129,16 @@ function clearRefreshTimer(): void {
   if (refreshTimer) clearTimeout(refreshTimer);
   refreshTimer = undefined;
 }
+function clearRealtimePing(): void {
+  if (realtimePingTimer) clearInterval(realtimePingTimer);
+  realtimePingTimer = undefined;
+}
 function disconnectRealtime(): void {
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = undefined;
   reconnectDelayMilliseconds = 1_000;
   realtimeRefreshRequired = false;
+  clearRealtimePing();
   const socket = realtimeSocket;
   realtimeSocket = undefined;
   socket?.close();
@@ -189,7 +202,13 @@ async function connectRealtime(): Promise<void> {
   let authenticated = false;
   realtimeSocket = socket;
   socket.addEventListener('open', () => {
-    if (realtimeSocket === socket) socket.send(JSON.stringify({ type: 'authenticate', access_token: token }));
+    if (realtimeSocket !== socket) return;
+    socket.send(JSON.stringify({ type: 'authenticate', access_token: token }));
+    clearRealtimePing();
+    realtimePingTimer = setInterval(() => {
+      if (realtimeSocket === socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'ping' }));
+      else clearRealtimePing();
+    }, 25_000);
   });
   socket.addEventListener('message', (event) => {
     if (realtimeSocket !== socket || typeof event.data !== 'string') return;
@@ -215,6 +234,7 @@ async function connectRealtime(): Promise<void> {
   });
   socket.addEventListener('error', () => socket.close());
   socket.addEventListener('close', () => {
+    clearRealtimePing();
     if (realtimeSocket === socket) {
       realtimeSocket = undefined;
       if (!authenticated) realtimeRefreshRequired = true;
@@ -379,20 +399,22 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
     if (event.message.startsWith('[webrtc]')) console.info(`[renderer] ${event.message}`);
   });
   window.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
-    const sourceID = selectedDisplaySourceID;
-    selectedDisplaySourceID = undefined;
-    if (!sourceID) {
+    const source = selectedDisplaySource;
+    selectedDisplaySource = undefined;
+    if (!source) {
       callback({});
       return;
     }
 
-    void desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } })
-      .then((sources) => {
-        const source = sources.find((item) => item.id === sourceID);
-        callback(source ? { video: source, ...(request.audioRequested && process.platform === 'win32' ? { audio: 'loopback' } : {}) } : {});
-      })
-      .catch(() => callback({}));
+    callback({ video: source, ...(request.audioRequested && process.platform === 'win32' ? { audio: 'loopback' } : {}) });
   });
+  window.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12' && !input.control && !input.alt && !input.meta) {
+      window.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+  if (debugEnabled) window.webContents.openDevTools({ mode: 'detach' });
   window.once('ready-to-show', () => onReady(window));
 
   const rendererURL = process.env['ELECTRON_RENDERER_URL'];
@@ -497,15 +519,17 @@ ipcMain.handle('realtime:send-webrtc-signal', (event, signal: unknown): void => 
 ipcMain.handle('screen-share:list-sources', async (event): Promise<DisplaySource[]> => {
   if (!isTrustedRendererURL(event.sender.getURL())) throw new Error('Untrusted screen-share request.');
   const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } });
+  cachedDisplaySources = sources;
   return sources
     .map((source) => ({ id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL(), kind: source.id.startsWith('screen:') ? 'screen' as const : 'window' as const }))
     .sort((left, right) => Number(right.kind === 'screen') - Number(left.kind === 'screen'));
 });
 ipcMain.handle('screen-share:select-source', async (event, sourceID: unknown): Promise<void> => {
   if (!isTrustedRendererURL(event.sender.getURL()) || typeof sourceID !== 'string' || !sourceID) throw new Error('Invalid screen-share source.');
-  const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 1, height: 1 } });
-  if (!sources.some((source) => source.id === sourceID)) throw new Error('Screen-share source is no longer available.');
-  selectedDisplaySourceID = sourceID;
+  const source = cachedDisplaySources.find((item) => item.id === sourceID)
+    ?? (await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 1, height: 1 } })).find((item) => item.id === sourceID);
+  if (!source) throw new Error('Screen-share source is no longer available.');
+  selectedDisplaySource = source;
 });
 ipcMain.handle('invites:create', (_event, serverID: unknown): Promise<{ code: string; expires_at: string }> => { if (typeof serverID !== 'number' || !Number.isSafeInteger(serverID) || serverID <= 0) throw new Error('Invalid server ID.'); return authenticatedRequest('/servers/' + serverID + '/invites', 'POST'); });
 ipcMain.handle('invites:create-and-copy', async (_event, serverID: unknown): Promise<{ code: string; expires_at: string }> => {

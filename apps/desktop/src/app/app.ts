@@ -64,6 +64,9 @@ export class AppComponent implements OnInit, OnDestroy {
   private localPeerMedia = new Map<PeerMediaKind, MediaStream>();
   private peerConnections = new Map<string, PeerMediaConnection>();
   private pendingPeerCandidates = new Map<string, PendingPeerCandidates>();
+  private desiredPeerMedia = new Set<string>();
+  private peerMediaRetryCounts = new Map<string, number>();
+  private pendingPeerMediaRemovals = new Map<number, ReturnType<typeof setTimeout>>();
 
   ngOnInit(): void {
     void this.refreshBackendStatus();
@@ -107,8 +110,10 @@ export class AppComponent implements OnInit, OnDestroy {
     });
     this.removeRealtimeVoicePresenceListener = window.desktop.realtime.onVoicePresenceChanged((presence) => {
       const voiceChannel = this.voiceChannel();
-      if (voiceChannel?.server_id === presence.server_id && presence.user_id !== this.currentUserID() && presence.channel_id !== voiceChannel.id) {
-        this.removePeerMediaForUser(presence.user_id, voiceChannel.id);
+      if (voiceChannel?.server_id === presence.server_id && presence.user_id !== this.currentUserID()) {
+        if (presence.channel_id === voiceChannel.id) this.cancelPeerMediaRemoval(presence.user_id);
+        else if (presence.channel_id === null) this.schedulePeerMediaRemoval(presence.user_id, voiceChannel.id);
+        else this.removePeerMediaForUser(presence.user_id, voiceChannel.id);
       }
       if (this.selectedServer()?.id !== presence.server_id) return;
       this.members.update((members) => members.map((member) => member.id === presence.user_id ? { ...member, voice_channel_id: presence.channel_id } : member));
@@ -308,7 +313,16 @@ export class AppComponent implements OnInit, OnDestroy {
   protected async openScreenSharePicker(): Promise<void> {
     if (!this.voiceRoom) return;
     this.loading.set(true); this.error.set('');
-    try { this.screenShareSources.set(await window.desktop.screenShare.listSources()); this.screenSharePickerOpen.set(true); }
+    try {
+      const sources = await window.desktop.screenShare.listSources();
+      const [picked] = sources;
+      if (sources.length === 1 && picked) {
+        await this.startScreenShare(picked);
+        return;
+      }
+      this.screenShareSources.set(sources);
+      this.screenSharePickerOpen.set(true);
+    }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to list screens for sharing.')); }
     finally { this.loading.set(false); }
   }
@@ -357,11 +371,15 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!channel || media.channelID !== channel.id) return;
     if (this.isWatchingPeerMedia(media)) {
       console.info('[webrtc] stopping remote media', { userID: media.userID, kind: media.kind, channelID: channel.id });
+      this.desiredPeerMedia.delete(peerMediaKey(media.userID, media.kind));
+      this.peerMediaRetryCounts.delete(peerMediaKey(media.userID, media.kind));
       this.closePeerConnections('incoming', media.userID, media.kind);
       await this.sendPeerSignal(media.userID, 'media.unwatch', { kind: media.kind });
       return;
     }
     console.info('[webrtc] requesting remote media', { userID: media.userID, kind: media.kind, channelID: channel.id });
+    this.desiredPeerMedia.add(peerMediaKey(media.userID, media.kind));
+    this.peerMediaRetryCounts.delete(peerMediaKey(media.userID, media.kind));
     await this.sendPeerSignal(media.userID, 'media.watch', { kind: media.kind });
   }
   private async publishPeerMedia(kind: PeerMediaKind, stream: MediaStream): Promise<void> {
@@ -429,10 +447,13 @@ export class AppComponent implements OnInit, OnDestroy {
       this.availablePeerMedia.update((items) => items.some((item) => item.channelID === signal.channel_id && item.userID === signal.from_user_id && item.kind === kind)
         ? items : [...items, { channelID: channel.id, userID: signal.from_user_id, name, kind }]);
       console.info('[webrtc] remote media is available', { fromUserID: signal.from_user_id, kind });
+      void this.maybeRewatchPeerMedia(signal.from_user_id, kind, channel.id);
       return;
     }
     if (signal.kind === 'media.unavailable') {
       this.availablePeerMedia.update((items) => items.filter((item) => item.channelID !== signal.channel_id || item.userID !== signal.from_user_id || item.kind !== kind));
+      this.desiredPeerMedia.delete(peerMediaKey(signal.from_user_id, kind));
+      this.peerMediaRetryCounts.delete(peerMediaKey(signal.from_user_id, kind));
       this.closePeerConnections('incoming', signal.from_user_id, kind);
       return;
     }
@@ -572,14 +593,19 @@ export class AppComponent implements OnInit, OnDestroy {
       if (connection.connectionState === 'connected') {
         if (peer.disconnectTimer) clearTimeout(peer.disconnectTimer);
         peer.disconnectTimer = undefined;
+        if (peer.direction === 'incoming') this.peerMediaRetryCounts.delete(peerMediaKey(remoteUserID, kind));
       } else if (connection.connectionState === 'disconnected' && !peer.disconnectTimer) {
         peer.disconnectTimer = setTimeout(() => {
           peer.disconnectTimer = undefined;
           const current = this.peerConnections.get(sessionID);
-          if (current === peer && ['disconnected', 'failed'].includes(connection.connectionState)) this.closePeerConnection(sessionID);
+          if (current === peer && ['disconnected', 'failed'].includes(connection.connectionState)) {
+            this.closePeerConnection(sessionID);
+            if (peer.direction === 'incoming') this.schedulePeerMediaRetry(remoteUserID, kind);
+          }
         }, peerDisconnectGraceMilliseconds);
       } else if (connection.connectionState === 'failed') {
         this.closePeerConnection(sessionID);
+        if (peer.direction === 'incoming') this.schedulePeerMediaRetry(remoteUserID, kind);
       } else if (connection.connectionState === 'closed') {
         this.closePeerConnection(sessionID, false);
       }
@@ -609,11 +635,56 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
   private removePeerMediaForUser(userID: number, channelID: number): void {
+    this.cancelPeerMediaRemoval(userID);
+    for (const kind of ['camera', 'screen'] as const) {
+      this.desiredPeerMedia.delete(peerMediaKey(userID, kind));
+      this.peerMediaRetryCounts.delete(peerMediaKey(userID, kind));
+    }
     this.availablePeerMedia.update((items) => items.filter((item) => item.channelID !== channelID || item.userID !== userID));
     for (const peer of [...this.peerConnections.values()]) {
       if (peer.remoteUserID === userID) this.closePeerConnection(peer.sessionID);
     }
     this.clearQueuedPeerCandidates(userID);
+  }
+  private schedulePeerMediaRemoval(userID: number, channelID: number): void {
+    if (this.pendingPeerMediaRemovals.has(userID)) return;
+    console.info('[webrtc] peer left voice, media removal scheduled', { userID, channelID });
+    this.pendingPeerMediaRemovals.set(userID, setTimeout(() => {
+      this.pendingPeerMediaRemovals.delete(userID);
+      const channel = this.voiceChannel();
+      if (channel?.id === channelID) this.removePeerMediaForUser(userID, channelID);
+    }, peerMediaRemovalGraceMilliseconds));
+  }
+  private cancelPeerMediaRemoval(userID: number): void {
+    const timer = this.pendingPeerMediaRemovals.get(userID);
+    if (timer) {
+      clearTimeout(timer);
+      this.pendingPeerMediaRemovals.delete(userID);
+      console.info('[webrtc] peer returned, media removal cancelled', { userID });
+    }
+  }
+  private async maybeRewatchPeerMedia(userID: number, kind: PeerMediaKind, channelID: number): Promise<void> {
+    const key = peerMediaKey(userID, kind);
+    if (!this.desiredPeerMedia.has(key)) return;
+    if (this.findPeerConnection('incoming', userID, kind)) return;
+    if (!this.availablePeerMedia().some((media) => media.channelID === channelID && media.userID === userID && media.kind === kind)) return;
+    console.info('[webrtc] resuming remote media', { userID, kind, channelID });
+    await this.sendPeerSignal(userID, 'media.watch', { kind });
+  }
+  private schedulePeerMediaRetry(userID: number, kind: PeerMediaKind): void {
+    const key = peerMediaKey(userID, kind);
+    if (!this.desiredPeerMedia.has(key)) return;
+    const attempts = (this.peerMediaRetryCounts.get(key) ?? 0) + 1;
+    if (attempts > maxPeerMediaRetryAttempts) {
+      console.warn('[webrtc] remote media retry limit reached', { userID, kind, attempts });
+      return;
+    }
+    this.peerMediaRetryCounts.set(key, attempts);
+    console.info('[webrtc] remote media retry scheduled', { userID, kind, attempts });
+    setTimeout(() => {
+      const channel = this.voiceChannel();
+      if (channel) void this.maybeRewatchPeerMedia(userID, kind, channel.id);
+    }, peerMediaRetryDelayMilliseconds);
   }
   private reconcilePeerMediaMembers(channelID: number): void {
     const activeUserIDs = new Set(this.voiceMembers(channelID).map((member) => member.id));
@@ -673,6 +744,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.localPeerMedia.clear();
     for (const peer of [...this.peerConnections.values()]) this.closePeerConnection(peer.sessionID);
     this.pendingPeerCandidates.clear();
+    this.desiredPeerMedia.clear();
+    this.peerMediaRetryCounts.clear();
+    for (const timer of this.pendingPeerMediaRemovals.values()) clearTimeout(timer);
+    this.pendingPeerMediaRemovals.clear();
     for (const item of this.peerMediaElements) item.element.remove();
     this.peerMediaElements = [];
     for (const audio of this.peerMediaAudioElements.values()) audio.remove();
@@ -883,6 +958,13 @@ const peerMediaEncodingLimits: Record<PeerMediaKind, { maxBitrate: number; maxFr
 const maxPendingPeerSessions = 32;
 const maxPendingCandidatesPerSession = 64;
 const peerDisconnectGraceMilliseconds = 10_000;
+const peerMediaRemovalGraceMilliseconds = 20_000;
+const peerMediaRetryDelayMilliseconds = 3_000;
+const maxPeerMediaRetryAttempts = 3;
+
+function peerMediaKey(userID: number, kind: PeerMediaKind): string {
+  return `${userID}:${kind}`;
+}
 
 function validPeerSessionID(sessionID: unknown): string | undefined {
   return typeof sessionID === 'string' && peerSessionIDPattern.test(sessionID) ? sessionID : undefined;
