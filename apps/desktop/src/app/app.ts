@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, HostListener, OnDestroy, OnInit, Renderer2, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, OnDestroy, OnInit, Renderer2, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Room, RoomEvent, Track } from 'livekit-client';
 
@@ -11,6 +11,15 @@ type User = { username: string; email: string; role: string };
 export class AppComponent implements OnInit, OnDestroy {
   private readonly renderer = inject(Renderer2);
   private readonly dismissedUpdateVersion = signal<string | null>(null);
+  private readonly messageList = viewChild<ElementRef<HTMLElement>>('messageList');
+
+  constructor() {
+    effect(() => {
+      this.messages();
+      const element = this.messageList()?.nativeElement;
+      if (element) requestAnimationFrame(() => { element.scrollTop = element.scrollHeight; });
+    });
+  }
   protected readonly macOS = navigator.userAgent.includes('Macintosh');
   protected readonly status = signal<BackendState>('checking');
   protected readonly user = signal<User | null>(null);
@@ -38,6 +47,12 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly screenShareSources = signal<ScreenShareSource[]>([]);
   protected readonly screenSharing = signal(false);
   protected readonly cameraEnabled = signal(false);
+  protected readonly screenPreviewEnabled = signal(false);
+  protected readonly cameraPreviewEnabled = signal(true);
+  protected readonly settingsOpen = signal(false);
+  protected readonly hardwareAcceleration = signal(true);
+  protected readonly hardwareAccelerationRestartRequired = signal(false);
+  protected readonly cameraEffect = signal<CameraEffectID>('none');
   protected readonly voiceMediaActive = signal(false);
   protected readonly voiceMediaVisible = signal(false);
   protected readonly availablePeerMedia = signal<PeerMediaAvailability[]>([]);
@@ -64,6 +79,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private localPeerMedia = new Map<PeerMediaKind, MediaStream>();
   private peerConnections = new Map<string, PeerMediaConnection>();
   private pendingPeerCandidates = new Map<string, PendingPeerCandidates>();
+  private cameraEffectPipeline?: CameraEffectPipeline;
   private desiredPeerMedia = new Set<string>();
   private peerMediaRetryCounts = new Map<string, number>();
   private pendingPeerMediaRemovals = new Map<number, ReturnType<typeof setTimeout>>();
@@ -303,7 +319,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.loading.set(true); this.error.set('');
     try {
       const enabled = !this.cameraEnabled();
-      if (enabled) await this.publishPeerMedia('camera', await navigator.mediaDevices.getUserMedia({ video: { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 24 } }, audio: false }));
+      if (enabled) await this.publishPeerMedia('camera', this.startCameraEffectPipeline(await navigator.mediaDevices.getUserMedia({ video: { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 24 } }, audio: false })));
       else await this.stopLocalPeerMedia('camera');
       this.cameraEnabled.set(enabled);
       if (enabled) this.voiceMediaVisible.set(true);
@@ -391,13 +407,14 @@ export class AppComponent implements OnInit, OnDestroy {
         if (this.localPeerMedia.get(kind) === stream) void this.stopLocalPeerMedia(kind);
       }, { once: true });
     });
-    this.addPeerMediaVideo(`local:${kind}`, stream, kind, this.user()?.username ?? 'You');
+    this.addPeerMediaVideo(`local:${kind}`, stream, kind, this.user()?.username ?? 'You', undefined, true);
     await this.announcePeerMedia(kind, 'media.available');
   }
   private async stopLocalPeerMedia(kind: PeerMediaKind): Promise<void> {
     const stream = this.localPeerMedia.get(kind);
     if (!stream) return;
     console.info('[webrtc] stopping local media', { kind });
+    if (kind === 'camera') this.stopCameraEffectPipeline();
     this.localPeerMedia.delete(kind);
     stream.getTracks().forEach((track) => track.stop());
     if (kind === 'camera') this.cameraEnabled.set(false);
@@ -737,6 +754,7 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
   private closePeerMedia(): void {
+    this.stopCameraEffectPipeline();
     for (const kind of ['camera', 'screen'] as const) {
       const stream = this.localPeerMedia.get(kind);
       stream?.getTracks().forEach((track) => track.stop());
@@ -757,15 +775,18 @@ export class AppComponent implements OnInit, OnDestroy {
     this.voiceMediaActive.set(false);
     this.updatePeerMediaLayout();
   }
-  private addPeerMediaVideo(id: string, stream: MediaStream, kind: PeerMediaKind, name: string, remoteMedia?: PeerMediaAvailability): void {
+  private addPeerMediaVideo(id: string, stream: MediaStream, kind: PeerMediaKind, name: string, remoteMedia?: PeerMediaAvailability, local = false): void {
+    const previewEnabled = local && this.localMediaPreviewEnabled(kind);
     const existing = this.peerMediaElements.find((item) => item.id === id);
     if (existing) {
-      existing.video.srcObject = stream;
+      existing.video.srcObject = local ? (previewEnabled ? stream : null) : stream;
       existing.label.textContent = kind === 'screen' ? `${name} está compartilhando` : name;
+      existing.element.classList.toggle('preview-off', local && !previewEnabled);
       return;
     }
     const element = this.renderer.createElement('article') as HTMLElement;
     element.className = `voice-media-tile ${kind === 'screen' ? 'shared-screen-video' : 'camera-video'}`;
+    if (local && !previewEnabled) element.classList.add('preview-off');
     element.dataset['mediaId'] = id;
     element.setAttribute('role', 'group');
     element.setAttribute('aria-label', kind === 'screen' ? `Tela compartilhada por ${name}` : `Câmera de ${name}`);
@@ -773,7 +794,7 @@ export class AppComponent implements OnInit, OnDestroy {
     video.autoplay = true;
     video.playsInline = true;
     video.muted = true;
-    video.srcObject = stream;
+    video.srcObject = previewEnabled ? stream : null;
     video.addEventListener('loadedmetadata', () => {
       console.info('[webrtc] media dimensions', JSON.stringify({ id, kind, videoWidth: video.videoWidth, videoHeight: video.videoHeight }));
     });
@@ -784,10 +805,158 @@ export class AppComponent implements OnInit, OnDestroy {
     highlightButton.className = 'voice-media-highlight';
     highlightButton.addEventListener('click', () => this.togglePeerMediaFeatured(element.dataset['mediaId'] ?? id));
     element.append(video, highlightButton, label);
+    let previewButton: HTMLButtonElement | undefined;
+    if (local) {
+      const controls = this.createLocalPreviewControls(kind);
+      previewButton = controls.button;
+      element.append(controls.placeholder, controls.button);
+    }
+    let effectButton: HTMLButtonElement | undefined;
+    if (local && kind === 'camera') {
+      effectButton = this.renderer.createElement('button') as HTMLButtonElement;
+      effectButton.type = 'button';
+      effectButton.className = 'voice-media-effect-toggle';
+      effectButton.title = 'Efeito: Nenhum';
+      effectButton.setAttribute('aria-label', 'Trocar efeito da câmera (atual: Nenhum)');
+      effectButton.append(this.createSVGIcon(['m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72', 'm14 7 3 3', 'M5 6v4', 'M19 14v4', 'M10 2v2', 'M7 8H3', 'M21 16h-4', 'M11 3H9']));
+      effectButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        this.cycleCameraEffect();
+      });
+      element.append(effectButton);
+    }
     if (remoteMedia) element.append(this.createStopWatchingOverlay(remoteMedia));
-    this.peerMediaElements.push({ id, element, video, label, highlightButton });
+    this.peerMediaElements.push({ id, element, video, label, highlightButton, previewButton, effectButton });
     this.voiceMediaActive.set(true); this.voiceMediaVisible.set(true);
     setTimeout(() => this.updatePeerMediaLayout(), 0);
+  }
+  private startCameraEffectPipeline(source: MediaStream): MediaStream {
+    this.stopCameraEffectPipeline();
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = source;
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return source;
+    const pipeline: CameraEffectPipeline = { source, video, canvas, context, running: true };
+    this.cameraEffectPipeline = pipeline;
+    video.addEventListener('loadedmetadata', () => {
+      if (this.cameraEffectPipeline !== pipeline) return;
+      const settings = source.getVideoTracks()[0]?.getSettings();
+      canvas.width = settings.width ?? (video.videoWidth || 1280);
+      canvas.height = settings.height ?? (video.videoHeight || 720);
+      void video.play().catch(() => undefined);
+      this.scheduleCameraEffectFrame();
+    });
+    void video.play().catch(() => undefined);
+    const stream = canvas.captureStream();
+    for (const track of source.getAudioTracks()) stream.addTrack(track);
+    console.info('[webrtc] camera effect pipeline started', JSON.stringify({ width: canvas.width || null, height: canvas.height || null }));
+    return stream;
+  }
+  private scheduleCameraEffectFrame(): void {
+    const pipeline = this.cameraEffectPipeline;
+    if (!pipeline?.running) return;
+    const video = pipeline.video as HTMLVideoElement & { requestVideoFrameCallback?: (callback: () => void) => number };
+    if (typeof video.requestVideoFrameCallback === 'function') video.requestVideoFrameCallback(() => this.drawCameraEffectFrame());
+    else requestAnimationFrame(() => this.drawCameraEffectFrame());
+  }
+  private drawCameraEffectFrame(): void {
+    const pipeline = this.cameraEffectPipeline;
+    if (!pipeline?.running) return;
+    const effect = cameraEffects.find((candidate) => candidate.id === this.cameraEffect());
+    pipeline.context.filter = effect?.filter ?? 'none';
+    pipeline.context.drawImage(pipeline.video, 0, 0, pipeline.canvas.width, pipeline.canvas.height);
+    this.scheduleCameraEffectFrame();
+  }
+  private stopCameraEffectPipeline(): void {
+    const pipeline = this.cameraEffectPipeline;
+    if (!pipeline) return;
+    this.cameraEffectPipeline = undefined;
+    pipeline.running = false;
+    pipeline.source.getTracks().forEach((track) => track.stop());
+    pipeline.video.srcObject = null;
+    console.info('[webrtc] camera effect pipeline stopped');
+  }
+  protected cycleCameraEffect(): void {
+    const index = cameraEffects.findIndex((effect) => effect.id === this.cameraEffect());
+    const next = cameraEffects[(index + 1) % cameraEffects.length] ?? cameraEffects[0]!;
+    this.cameraEffect.set(next.id);
+    const name = this.user()?.username ?? 'You';
+    const item = this.peerMediaElements.find((candidate) => candidate.id === 'local:camera');
+    if (item) {
+      item.label.textContent = next.id === 'none' ? name : `${name} · ${next.label}`;
+      if (item.effectButton) {
+        item.effectButton.title = `Efeito: ${next.label}`;
+        item.effectButton.setAttribute('aria-label', `Trocar efeito da câmera (atual: ${next.label})`);
+      }
+    }
+    console.info('[webrtc] camera effect changed', { effect: next.id });
+  }
+  private localMediaPreviewEnabled(kind: PeerMediaKind): boolean {
+    return kind === 'camera' ? this.cameraPreviewEnabled() : this.screenPreviewEnabled();
+  }
+  protected toggleLocalMediaPreview(kind: PeerMediaKind): void {
+    const enabled = !this.localMediaPreviewEnabled(kind);
+    if (kind === 'camera') this.cameraPreviewEnabled.set(enabled);
+    else this.screenPreviewEnabled.set(enabled);
+    const item = this.peerMediaElements.find((candidate) => candidate.id === `local:${kind}`);
+    if (!item) return;
+    const stream = this.localPeerMedia.get(kind);
+    item.video.srcObject = enabled ? stream ?? null : null;
+    item.element.classList.toggle('preview-off', !enabled);
+    this.updateLocalMediaPreviewButton(item.previewButton, kind, enabled);
+  }
+  private updateLocalMediaPreviewButton(button: HTMLButtonElement | undefined, kind: PeerMediaKind, enabled: boolean): void {
+    if (!button) return;
+    const mediaLabel = kind === 'screen' ? 'da tela' : 'da câmera';
+    button.title = enabled ? `Desativar prévia ${mediaLabel}` : `Ativar prévia ${mediaLabel}`;
+    button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-pressed', String(enabled));
+  }
+  private createLocalPreviewControls(kind: PeerMediaKind): { button: HTMLButtonElement; placeholder: HTMLElement } {
+    const button = this.renderer.createElement('button') as HTMLButtonElement;
+    button.type = 'button';
+    button.className = 'voice-media-preview-toggle';
+    const onIcon = this.createSVGIcon(['M2.07 10.93A10.45 10.45 0 0 1 12 5c7 0 10 7 10 7s-3 7-10 7a10.45 10.45 0 0 1-9.93-4.07']);
+    const pupil = this.renderer.createElement('circle', 'svg') as SVGCircleElement;
+    pupil.setAttribute('cx', '12');
+    pupil.setAttribute('cy', '12');
+    pupil.setAttribute('r', '3');
+    onIcon.appendChild(pupil);
+    onIcon.classList.add('preview-icon-on');
+    const offIcon = this.createSVGIcon(['M3 3l18 18', 'M10.6 10.6a2 2 0 0 0 2.8 2.8', 'M9.9 4.2A10.5 10.5 0 0 1 12 4c5 0 9 4.5 10 8a12.7 12.7 0 0 1-2.1 3.8', 'M6.6 6.6C4.2 8.2 2.7 10.4 2 12c1.1 3.5 5 8 10 8 1.3 0 2.5-.3 3.6-.8']);
+    offIcon.classList.add('preview-icon-off');
+    button.append(onIcon, offIcon);
+    this.updateLocalMediaPreviewButton(button, kind, this.localMediaPreviewEnabled(kind));
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.toggleLocalMediaPreview(kind);
+    });
+    const placeholder = this.renderer.createElement('div') as HTMLElement;
+    placeholder.className = 'voice-media-preview-placeholder';
+    const placeholderIcon = this.createSVGIcon(['M3 4h18v14H3z', 'm8 22 4-4 4 4']);
+    const placeholderText = this.renderer.createElement('span') as HTMLSpanElement;
+    placeholderText.textContent = 'Prévia desativada';
+    placeholder.append(placeholderIcon, placeholderText);
+    return { button, placeholder };
+  }
+  private createSVGIcon(paths: string[]): SVGElement {
+    const icon = this.renderer.createElement('svg', 'svg') as SVGElement;
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '2');
+    icon.setAttribute('stroke-linecap', 'round');
+    icon.setAttribute('stroke-linejoin', 'round');
+    for (const data of paths) {
+      const path = this.renderer.createElement('path', 'svg') as SVGPathElement;
+      path.setAttribute('d', data);
+      icon.appendChild(path);
+    }
+    return icon;
   }
   private createStopWatchingOverlay(media: PeerMediaAvailability): HTMLElement {
     const controls = this.renderer.createElement('div') as HTMLElement;
@@ -891,6 +1060,27 @@ export class AppComponent implements OnInit, OnDestroy {
     event.preventDefault();
     if (!this.loading() && this.messageContent.trim()) form.requestSubmit();
   }
+  protected autoResizeComposer(event: Event): void {
+    const textarea = event.target as HTMLTextAreaElement;
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 144) + 'px';
+  }
+  protected relaunchApp(): void { void window.desktop.app.relaunch(); }
+  protected async openSettings(): Promise<void> {
+    try {
+      const settings = await window.desktop.settings.get();
+      this.hardwareAcceleration.set(settings.hardwareAcceleration);
+      this.hardwareAccelerationRestartRequired.set(settings.hardwareAcceleration !== settings.active);
+    } catch { /* Defaults remain until the user toggles the setting. */ }
+    this.settingsOpen.set(true);
+  }
+  protected closeSettings(): void { this.settingsOpen.set(false); }
+  protected async toggleHardwareAcceleration(event: Event): Promise<void> {
+    const enabled = (event.target as HTMLInputElement).checked;
+    this.hardwareAcceleration.set(enabled);
+    try { this.hardwareAccelerationRestartRequired.set((await window.desktop.settings.setHardwareAcceleration(enabled)).restartRequired); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+  }
   protected async sendMessage(): Promise<void> { const channel = this.selectedChannel(); const content = this.messageContent.trim(); if (!channel || !content || this.loading()) return; this.loading.set(true); try { await window.desktop.messages.create(channel.id, content); this.messageContent = ''; await this.selectChannel(channel); } catch (error) { this.error.set(this.messageFor(error, 'Unable to send message.')); } finally { this.loading.set(false); } }
   protected async createInvite(): Promise<void> { const server=this.selectedServer(); if(!server)return; try { this.createdInvite=(await window.desktop.invites.createAndCopy(server.id)).code; } catch(error){this.error.set(this.messageFor(error,'Unable to create invite.'));} }
   protected async joinInvite(): Promise<void> { try { const joined=await window.desktop.invites.join(this.inviteCode); this.inviteCode=''; await this.loadServers(joined.server_id); } catch(error){this.error.set(this.messageFor(error,'Unable to join invite.'));} }
@@ -947,7 +1137,18 @@ type IncomingPeerSignal = { channel_id: number; from_user_id: number; kind: Peer
 type PeerMediaAvailability = { channelID: number; userID: number; name: string; kind: PeerMediaKind };
 type PeerMediaConnection = { sessionID: string; connection: RTCPeerConnection; direction: PeerDirection; remoteUserID: number; kind: PeerMediaKind; pendingCandidates: RTCIceCandidateInit[]; disconnectTimer?: ReturnType<typeof setTimeout> };
 type PendingPeerCandidates = { remoteUserID: number; kind: PeerMediaKind; candidates: RTCIceCandidateInit[] };
-type PeerMediaElement = { id: string; element: HTMLElement; video: HTMLVideoElement; label: HTMLSpanElement; highlightButton: HTMLButtonElement };
+type PeerMediaElement = { id: string; element: HTMLElement; video: HTMLVideoElement; label: HTMLSpanElement; highlightButton: HTMLButtonElement; previewButton?: HTMLButtonElement; effectButton?: HTMLButtonElement };
+type CameraEffectPipeline = { source: MediaStream; video: HTMLVideoElement; canvas: HTMLCanvasElement; context: CanvasRenderingContext2D; running: boolean };
+type CameraEffectID = 'none' | 'grayscale' | 'sepia' | 'invert' | 'vintage' | 'cold';
+
+const cameraEffects: Array<{ id: CameraEffectID; label: string; filter: string }> = [
+  { id: 'none', label: 'Nenhum', filter: 'none' },
+  { id: 'grayscale', label: 'Preto e branco', filter: 'grayscale(1) contrast(1.05)' },
+  { id: 'sepia', label: 'Sépia', filter: 'sepia(0.9)' },
+  { id: 'invert', label: 'Negativo', filter: 'invert(1)' },
+  { id: 'vintage', label: 'Vintage', filter: 'sepia(0.4) saturate(1.4) contrast(1.05) brightness(1.05)' },
+  { id: 'cold', label: 'Frio', filter: 'saturate(1.3) hue-rotate(15deg) brightness(1.05) contrast(1.05)' },
+];
 type ServerMember = { id: number; username: string; role: 'owner' | 'member'; online: boolean; voice_channel_id: number | null };
 
 const peerSessionIDPattern = /^[A-Za-z0-9_-]{1,64}$/;

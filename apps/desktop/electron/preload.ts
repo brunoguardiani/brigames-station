@@ -3,6 +3,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { DESKTOP_UPDATER_CHANNELS, DesktopUpdaterStatus } from './updater/updater.types';
 
 contextBridge.exposeInMainWorld('desktop', {
+  app: {
+    relaunch: (): Promise<void> => ipcRenderer.invoke('app:relaunch'),
+  },
   backend: {
     getHealth: (): Promise<{ status: 'alive' }> => ipcRenderer.invoke('backend:get-health'),
   },
@@ -48,6 +51,10 @@ contextBridge.exposeInMainWorld('desktop', {
     selectSource: (sourceID: string) => ipcRenderer.invoke('screen-share:select-source', sourceID),
   },
   invites: { create: (serverID: number) => ipcRenderer.invoke('invites:create', serverID), createAndCopy: (serverID: number) => ipcRenderer.invoke('invites:create-and-copy', serverID), join: (code: string) => ipcRenderer.invoke('invites:join', code) },
+  settings: {
+    get: (): Promise<{ hardwareAcceleration: boolean; active: boolean }> => ipcRenderer.invoke('settings:get'),
+    setHardwareAcceleration: (enabled: boolean): Promise<{ restartRequired: boolean }> => ipcRenderer.invoke('settings:set-hardware-acceleration', enabled),
+  },
   realtime: {
     onConnected: (callback: () => void): (() => void) => {
       const listener = () => callback();

@@ -6,6 +6,9 @@ type DesktopUpdaterStatus = import('../electron/updater/updater.types').DesktopU
 
 interface Window {
   desktop: {
+    app: {
+      relaunch(): Promise<void>;
+    };
     backend: {
       getHealth(): Promise<BackendHealth>;
     };
@@ -43,6 +46,10 @@ interface Window {
       selectSource(sourceID: string): Promise<void>;
     };
     invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; createAndCopy(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
+    settings: {
+      get(): Promise<{ hardwareAcceleration: boolean; active: boolean }>;
+      setHardwareAcceleration(enabled: boolean): Promise<{ restartRequired: boolean }>;
+    };
     realtime: {
       onConnected(callback: () => void): () => void;
       onMessageCreated(callback: (message: Message) => void): () => void;

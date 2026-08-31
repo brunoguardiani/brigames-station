@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, nativeImage, safeStorage } from 'electron';
-import { existsSync, promises as fs } from 'node:fs';
+import { existsSync, promises as fs, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,6 +12,23 @@ const backendURL = process.env['DESKTOP_BACKEND_URL'] ?? (app.isPackaged ? 'http
 const backendHealthURL = backendURL + '/health';
 const webRTCStunURL = process.env['WEBRTC_STUN_URL'] ?? 'stun:stun.cloudflare.com:3478';
 const debugEnabled = process.argv.includes('--debug') || process.env['BRIGAMES_DEBUG'] === '1';
+
+type AppSettings = { hardwareAcceleration: boolean };
+function settingsPath(): string { return path.join(app.getPath('userData'), 'settings.json'); }
+function readSettings(): AppSettings {
+  try {
+    const raw = JSON.parse(readFileSync(settingsPath(), 'utf8')) as Partial<AppSettings>;
+    return { hardwareAcceleration: raw.hardwareAcceleration !== false };
+  } catch {
+    return { hardwareAcceleration: true };
+  }
+}
+function writeSettings(settings: AppSettings): void {
+  writeFileSync(settingsPath(), JSON.stringify(settings, null, 2));
+}
+const appSettings = readSettings();
+const hardwareAccelerationActive = appSettings.hardwareAcceleration;
+if (!appSettings.hardwareAcceleration) app.disableHardwareAcceleration();
 if (process.platform === 'win32') app.setAppUserModelId('com.brigames-station.desktop');
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
@@ -426,6 +443,15 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
   await window.loadFile(path.join(__dirname, '..', 'dist', 'desktop', 'browser', 'index.html'));
   return window;
 }
+
+ipcMain.handle('app:relaunch', (): void => { app.relaunch(); app.exit(0); });
+ipcMain.handle('settings:get', (): { hardwareAcceleration: boolean; active: boolean } => ({ hardwareAcceleration: appSettings.hardwareAcceleration, active: hardwareAccelerationActive }));
+ipcMain.handle('settings:set-hardware-acceleration', (_event, enabled: unknown): { restartRequired: boolean } => {
+  if (typeof enabled !== 'boolean') throw new Error('Invalid hardware acceleration setting.');
+  appSettings.hardwareAcceleration = enabled;
+  writeSettings(appSettings);
+  return { restartRequired: enabled !== hardwareAccelerationActive };
+});
 
 ipcMain.handle('backend:get-health', async (): Promise<{ status: 'alive' }> => {
   const response = await fetch(`${backendHealthURL}?timestamp=${Date.now()}`, {
