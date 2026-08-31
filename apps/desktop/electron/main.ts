@@ -13,7 +13,8 @@ const backendHealthURL = backendURL + '/health';
 const webRTCStunURL = process.env['WEBRTC_STUN_URL'] ?? 'stun:stun.cloudflare.com:3478';
 const debugEnabled = process.argv.includes('--debug') || process.env['BRIGAMES_DEBUG'] === '1';
 
-type AppSettings = { hardwareAcceleration: boolean; noiseFilter: boolean; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number };
+type ParticipantAudioPreference = { volume: number; muted: boolean };
+type AppSettings = { hardwareAcceleration: boolean; noiseFilter: boolean; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, ParticipantAudioPreference> };
 function desktopAppVersion(): string {
   try {
     const version = (JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { version?: string }).version;
@@ -22,6 +23,17 @@ function desktopAppVersion(): string {
   return app.getVersion();
 }
 function settingsPath(): string { return path.join(app.getPath('userData'), 'settings.json'); }
+function participantAudioPreferences(value: unknown): Record<string, ParticipantAudioPreference> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const preferences: Record<string, ParticipantAudioPreference> = {};
+  for (const [userID, candidate] of Object.entries(value).slice(0, 1_000)) {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(userID) || !candidate || typeof candidate !== 'object') continue;
+    const preference = candidate as Partial<ParticipantAudioPreference>;
+    if (typeof preference.volume !== 'number' || !Number.isFinite(preference.volume) || typeof preference.muted !== 'boolean') continue;
+    preferences[userID] = { volume: Math.min(1, Math.max(0, preference.volume)), muted: preference.muted };
+  }
+  return preferences;
+}
 function readSettings(): AppSettings {
   try {
     const raw = JSON.parse(readFileSync(settingsPath(), 'utf8')) as Partial<AppSettings>;
@@ -32,9 +44,10 @@ function readSettings(): AppSettings {
       inputDeviceId: typeof raw.inputDeviceId === 'string' && raw.inputDeviceId ? raw.inputDeviceId : null,
       outputDeviceId: typeof raw.outputDeviceId === 'string' && raw.outputDeviceId ? raw.outputDeviceId : null,
       outputVolume: typeof raw.outputVolume === 'number' && Number.isFinite(raw.outputVolume) ? Math.min(2, Math.max(0, raw.outputVolume)) : 1,
+      participantAudioPreferences: participantAudioPreferences(raw.participantAudioPreferences),
     };
   } catch {
-    return { hardwareAcceleration: true, noiseFilter: true, inputVolumeDb: 0, inputDeviceId: null, outputDeviceId: null, outputVolume: 1 };
+    return { hardwareAcceleration: true, noiseFilter: true, inputVolumeDb: 0, inputDeviceId: null, outputDeviceId: null, outputVolume: 1, participantAudioPreferences: {} };
   }
 }
 function writeSettings(settings: AppSettings): void {
@@ -487,6 +500,17 @@ ipcMain.handle('settings:set-audio', (_event, patch: unknown): AppSettings => {
   }
   writeSettings(appSettings);
   return { ...appSettings };
+});
+ipcMain.handle('settings:set-participant-audio', (_event, userID: unknown, preference: unknown): void => {
+  if (typeof userID !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(userID)) throw new Error('Invalid participant ID.');
+  if (preference === null) {
+    delete appSettings.participantAudioPreferences[userID];
+  } else {
+    const parsed = participantAudioPreferences({ [userID]: preference })[userID];
+    if (!parsed) throw new Error('Invalid participant audio preference.');
+    appSettings.participantAudioPreferences[userID] = parsed;
+  }
+  writeSettings(appSettings);
 });
 
 ipcMain.handle('backend:get-health', async (): Promise<{ status: 'alive' }> => {
