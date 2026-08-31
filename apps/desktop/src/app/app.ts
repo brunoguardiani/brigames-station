@@ -253,7 +253,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.loading.set(true); this.error.set('');
     try {
       const enabled = !this.cameraEnabled();
-      if (enabled) await this.publishPeerMedia('camera', await navigator.mediaDevices.getUserMedia({ video: true, audio: false }));
+      if (enabled) await this.publishPeerMedia('camera', await navigator.mediaDevices.getUserMedia({ video: { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 24 } }, audio: false }));
       else await this.stopLocalPeerMedia('camera');
       this.cameraEnabled.set(enabled);
       if (enabled) this.voiceMediaVisible.set(true);
@@ -275,8 +275,8 @@ export class AppComponent implements OnInit, OnDestroy {
       console.info('[webrtc] selected display source', JSON.stringify({ kind: source.kind, name: source.name }));
       await window.desktop.screenShare.selectSource(source.id);
       const includeAudio = this.systemAudioSupported && this.shareSystemAudio;
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: includeAudio });
-      stream.getVideoTracks().forEach((track) => { track.contentHint = 'detail'; });
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 30 } }, audio: includeAudio });
+      stream.getVideoTracks().forEach((track) => { track.contentHint = 'motion'; });
       await this.publishPeerMedia('screen', stream);
       this.screenSharing.set(true);
       this.voiceMediaVisible.set(true);
@@ -461,9 +461,20 @@ export class AppComponent implements OnInit, OnDestroy {
     const sessionID = crypto.randomUUID();
     console.info('[webrtc] creating offer', { userID, kind, sessionID });
     const peer = await this.getPeerConnection(sessionID, 'outgoing', userID, kind);
-    stream.getTracks().forEach((track) => peer.connection.addTrack(track, stream));
+    for (const track of stream.getTracks()) {
+      const sender = peer.connection.addTrack(track, stream);
+      if (track.kind === 'video') await this.applyVideoSenderLimits(sender, kind);
+    }
     await peer.connection.setLocalDescription(await peer.connection.createOffer());
     await this.sendPeerSignal(userID, 'offer', { kind, description: serializedSessionDescription(peer.connection.localDescription) }, sessionID);
+  }
+  private async applyVideoSenderLimits(sender: RTCRtpSender, kind: PeerMediaKind): Promise<void> {
+    const parameters = sender.getParameters();
+    const limits = peerMediaEncodingLimits[kind];
+    parameters.degradationPreference = 'maintain-framerate';
+    parameters.encodings = [{ ...(parameters.encodings[0] ?? {}), ...limits }];
+    await sender.setParameters(parameters);
+    console.info('[webrtc] video sender limits applied', JSON.stringify({ kind, ...limits }));
   }
   private async getPeerConnection(sessionID: string, direction: PeerDirection, remoteUserID: number, kind: PeerMediaKind): Promise<PeerMediaConnection> {
     const existing = this.peerConnections.get(sessionID);
@@ -820,6 +831,10 @@ type PeerMediaElement = { id: string; element: HTMLElement; video: HTMLVideoElem
 type ServerMember = { id: number; username: string; role: 'owner' | 'member'; online: boolean; voice_channel_id: number | null };
 
 const peerSessionIDPattern = /^[A-Za-z0-9_-]{1,64}$/;
+const peerMediaEncodingLimits: Record<PeerMediaKind, { maxBitrate: number; maxFramerate: number }> = {
+  screen: { maxBitrate: 2_500_000, maxFramerate: 30 },
+  camera: { maxBitrate: 1_000_000, maxFramerate: 24 },
+};
 const maxPendingPeerSessions = 32;
 const maxPendingCandidatesPerSession = 64;
 const peerDisconnectGraceMilliseconds = 10_000;
