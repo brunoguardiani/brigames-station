@@ -47,8 +47,10 @@ interface Window {
     };
     invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; createAndCopy(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
     settings: {
-      get(): Promise<{ hardwareAcceleration: boolean; active: boolean }>;
+      get(): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number }>;
       setHardwareAcceleration(enabled: boolean): Promise<{ restartRequired: boolean }>;
+      setNoiseFilter(enabled: boolean): Promise<void>;
+      setAudio(patch: { inputVolumeDb?: number; inputDeviceId?: string | null; outputDeviceId?: string | null; outputVolume?: number }): Promise<void>;
     };
     realtime: {
       onConnected(callback: () => void): () => void;

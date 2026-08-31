@@ -1,7 +1,9 @@
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, OnDestroy, OnInit, Renderer2, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Room, RoomEvent, Track } from 'livekit-client';
+import { LocalAudioTrack, Room, RoomEvent, Track } from 'livekit-client';
+import type { AudioCaptureOptions } from 'livekit-client';
 import { deriveCallMiniPreviewModel, type CallMediaDescriptor } from './call-mini-preview-state';
+import { MicProcessor, createMicWorkletNode, decibelsToLinearGain } from './rnnoise/mic-processor';
 
 type BackendState = 'checking' | 'available' | 'unavailable';
 type User = { username: string; email: string; role: string };
@@ -61,6 +63,18 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly settingsOpen = signal(false);
   protected readonly hardwareAcceleration = signal(true);
   protected readonly hardwareAccelerationRestartRequired = signal(false);
+  protected readonly appVersion = signal('');
+  protected readonly noiseFilterEnabled = signal(true);
+  protected readonly inputVolumeDb = signal(0);
+  protected readonly inputDeviceId = signal<string | null>(null);
+  protected readonly outputDeviceId = signal<string | null>(null);
+  protected readonly outputVolume = signal(1);
+  protected readonly inputDevices = signal<MediaDeviceInfo[]>([]);
+  protected readonly outputDevices = signal<MediaDeviceInfo[]>([]);
+  protected readonly micLevel = signal(0);
+  protected readonly micTestActive = signal(false);
+  private micProcessor?: MicProcessor;
+  private micTest?: { stream: MediaStream; context: AudioContext; source: MediaStreamAudioSourceNode; worklet: AudioWorkletNode };
   protected readonly cameraEffect = signal<CameraEffectID>('none');
   protected readonly voiceMediaActive = signal(false);
   protected readonly voiceMediaVisible = signal(false);
@@ -277,6 +291,7 @@ export class AppComponent implements OnInit, OnDestroy {
           const audio = track.attach();
           document.body.appendChild(audio);
           this.voiceAudioElements.push(audio);
+          this.applyOutputAudioSettings();
         }
       });
       room.on(RoomEvent.ParticipantConnected, () => {
@@ -313,7 +328,7 @@ export class AppComponent implements OnInit, OnDestroy {
       });
 
       await room.connect(session.url, session.token);
-      await room.localParticipant.setMicrophoneEnabled(true);
+      await this.enableMicrophone(room);
       this.voiceRoom = room;
       this.voiceChannel.set(channel);
       await window.desktop.voice.setPresence(channel.id);
@@ -365,7 +380,183 @@ export class AppComponent implements OnInit, OnDestroy {
     this.voiceMediaVisible.set(true);
     this.schedulePeerMediaLayout();
   }
-  protected async toggleMicrophone(): Promise<void> { if (!this.voiceRoom) return; const muted = !this.microphoneMuted(); await this.voiceRoom.localParticipant.setMicrophoneEnabled(!muted); this.microphoneMuted.set(muted); this.playVoiceSound(muted ? 'mute' : 'unmute'); }
+  protected readonly callMiniPreviewPosition = signal<{ x: number; y: number } | null>(readCallMiniPreviewPlacement().position);
+  protected readonly callMiniPreviewWidth = signal<number | null>(readCallMiniPreviewPlacement().width);
+  private callMiniDragState?: { pointerID: number; offsetX: number; offsetY: number; width: number; height: number };
+  private callMiniResizeState?: { pointerID: number; startX: number; startWidth: number };
+  protected startCallMiniDrag(event: PointerEvent): void {
+    if (event.target instanceof Element && event.target.closest('button')) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const handle = event.currentTarget as HTMLElement;
+    const preview = handle.closest<HTMLElement>('.call-mini-preview');
+    if (!handle || !preview) return;
+    const rect = preview.getBoundingClientRect();
+    this.callMiniDragState = { pointerID: event.pointerId, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top, width: rect.width, height: rect.height };
+    preview.classList.add('dragging');
+    try { handle.setPointerCapture(event.pointerId); } catch { /* Dragging continues through window listeners. */ }
+    event.preventDefault();
+  }
+  protected moveCallMiniDrag(event: PointerEvent): void {
+    const drag = this.callMiniDragState;
+    if (!drag || event.pointerId !== drag.pointerID) return;
+    const margin = 8;
+    const x = Math.min(Math.max(margin, event.clientX - drag.offsetX), Math.max(margin, window.innerWidth - drag.width - margin));
+    const y = Math.min(Math.max(margin, event.clientY - drag.offsetY), Math.max(margin, window.innerHeight - drag.height - margin));
+    this.callMiniPreviewPosition.set({ x, y });
+  }
+  protected endCallMiniDrag(event: PointerEvent): void {
+    const drag = this.callMiniDragState;
+    if (!drag || event.pointerId !== drag.pointerID) return;
+    this.callMiniDragState = undefined;
+    const handle = event.currentTarget as HTMLElement;
+    handle?.closest<HTMLElement>('.call-mini-preview')?.classList.remove('dragging');
+    try { handle?.releasePointerCapture(event.pointerId); } catch { /* Capture already released. */ }
+    writeCallMiniPreviewPlacement(this.callMiniPreviewPosition(), this.callMiniPreviewWidth());
+  }
+  protected startCallMiniResize(event: PointerEvent): void {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const handle = event.currentTarget as HTMLElement;
+    const preview = handle.closest<HTMLElement>('.call-mini-preview');
+    if (!handle || !preview) return;
+    const rect = preview.getBoundingClientRect();
+    this.callMiniResizeState = { pointerID: event.pointerId, startX: event.clientX, startWidth: rect.width };
+    preview.classList.add('resizing');
+    try { handle.setPointerCapture(event.pointerId); } catch { /* Resizing continues through window listeners. */ }
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  protected moveCallMiniResize(event: PointerEvent): void {
+    const resize = this.callMiniResizeState;
+    if (!resize || event.pointerId !== resize.pointerID) return;
+    const width = Math.min(Math.max(callMiniPreviewMinWidth, resize.startWidth + event.clientX - resize.startX), callMiniPreviewMaxWidthForViewport());
+    this.callMiniPreviewWidth.set(width);
+  }
+  protected endCallMiniResize(event: PointerEvent): void {
+    const resize = this.callMiniResizeState;
+    if (!resize || event.pointerId !== resize.pointerID) return;
+    this.callMiniResizeState = undefined;
+    const handle = event.currentTarget as HTMLElement;
+    handle?.closest<HTMLElement>('.call-mini-preview')?.classList.remove('resizing');
+    try { handle?.releasePointerCapture(event.pointerId); } catch { /* Capture already released. */ }
+    writeCallMiniPreviewPlacement(this.callMiniPreviewPosition(), this.callMiniPreviewWidth());
+  }
+  protected async toggleMicrophone(): Promise<void> {
+    if (!this.voiceRoom) return;
+    const muted = !this.microphoneMuted();
+    await this.voiceRoom.localParticipant.setMicrophoneEnabled(!muted, this.microphoneCaptureOptions());
+    if (!muted) await this.applyMicProcessor(this.voiceRoom);
+    this.microphoneMuted.set(muted);
+    this.playVoiceSound(muted ? 'mute' : 'unmute');
+  }
+  private microphoneCaptureOptions(): AudioCaptureOptions {
+    const deviceID = this.inputDeviceId();
+    return { echoCancellation: true, autoGainControl: true, noiseSuppression: !this.noiseFilterEnabled(), ...(deviceID ? { deviceId: { ideal: deviceID } } : {}) } as AudioCaptureOptions;
+  }
+  private async enableMicrophone(room: Room): Promise<void> {
+    await room.localParticipant.setMicrophoneEnabled(true, this.microphoneCaptureOptions());
+    await this.applyMicProcessor(room);
+  }
+  private async applyMicProcessor(room: Room): Promise<void> {
+    const track = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
+    if (!(track instanceof LocalAudioTrack) || track.getProcessor()?.name === 'mic-processor') return;
+    try {
+      const processor = new MicProcessor({ rnnoise: this.noiseFilterEnabled(), gainDecibels: this.inputVolumeDb() });
+      processor.onLevel = (level) => this.micLevel.set(level);
+      await track.setProcessor(processor);
+      this.micProcessor = processor;
+      console.info('[voice] mic processor attached', JSON.stringify({ rnnoise: this.noiseFilterEnabled(), gainDb: this.inputVolumeDb() }));
+    } catch (error) {
+      console.warn('[voice] unable to attach mic processor', error instanceof Error ? error.message : String(error));
+      await track.mediaStreamTrack.applyConstraints({ echoCancellation: true, autoGainControl: true, noiseSuppression: true }).catch(() => undefined);
+    }
+  }
+  protected async toggleNoiseFilter(enabled: boolean): Promise<void> {
+    this.noiseFilterEnabled.set(enabled);
+    try { await window.desktop.settings.setNoiseFilter(enabled); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+    const processor = this.micProcessor;
+    if (processor) {
+      processor.setRnnoise(enabled);
+      const track = this.voiceRoom?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
+      await track?.mediaStreamTrack.applyConstraints({ echoCancellation: true, autoGainControl: true, noiseSuppression: !enabled }).catch(() => undefined);
+      console.info('[voice] rnnoise', enabled ? 'enabled' : 'disabled');
+    }
+  }
+  protected async setInputVolume(decibels: number): Promise<void> {
+    this.inputVolumeDb.set(decibels);
+    this.micProcessor?.setGainDecibels(decibels);
+    try { await window.desktop.settings.setAudio({ inputVolumeDb: decibels }); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+  }
+  protected async selectInputDevice(deviceID: string): Promise<void> {
+    this.inputDeviceId.set(deviceID || null);
+    try { await window.desktop.settings.setAudio({ inputDeviceId: deviceID || null }); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+    const track = this.voiceRoom?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
+    if (track instanceof LocalAudioTrack && deviceID) await track.setDeviceId({ ideal: deviceID }).catch(() => undefined);
+  }
+  protected async selectOutputDevice(deviceID: string): Promise<void> {
+    this.outputDeviceId.set(deviceID || null);
+    try { await window.desktop.settings.setAudio({ outputDeviceId: deviceID || null }); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+    this.applyOutputAudioSettings();
+  }
+  protected async setOutputVolume(volume: number): Promise<void> {
+    this.outputVolume.set(volume);
+    try { await window.desktop.settings.setAudio({ outputVolume: volume }); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+    this.applyOutputAudioSettings();
+  }
+  private applyOutputAudioSettings(): void {
+    const volume = this.outputVolume();
+    const deviceID = this.outputDeviceId();
+    for (const element of [...this.voiceAudioElements, ...this.peerMediaAudioElements.values()]) {
+      element.volume = volume;
+      if (deviceID) void element.setSinkId(deviceID).catch(() => undefined);
+    }
+  }
+  private async refreshAudioDevices(): Promise<void> {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      this.inputDevices.set(devices.filter((device) => device.kind === 'audioinput'));
+      this.outputDevices.set(devices.filter((device) => device.kind === 'audiooutput'));
+    } catch { /* Device labels become available after the first microphone use. */ }
+  }
+  protected async toggleMicTest(): Promise<void> {
+    if (this.micTestActive()) {
+      this.stopMicTest();
+      return;
+    }
+    try {
+      const deviceID = this.inputDeviceId();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, autoGainControl: true, noiseSuppression: false, ...(deviceID ? { deviceId: { ideal: deviceID } } : {}) } });
+      const context = new AudioContext();
+      if (context.state === 'suspended') await context.resume().catch(() => undefined);
+      const source = context.createMediaStreamSource(stream);
+      const worklet = await createMicWorkletNode(context, { rnnoise: this.noiseFilterEnabled(), gain: 1 });
+      worklet.parameters.get('gain')!.value = decibelsToLinearGain(this.inputVolumeDb());
+      worklet.port.onmessage = (event: MessageEvent<{ level?: number }>) => {
+        if (typeof event.data?.level === 'number') this.micLevel.set(event.data.level);
+      };
+      source.connect(worklet);
+      worklet.connect(context.destination);
+      this.micTest = { stream, context, source, worklet };
+      this.micTestActive.set(true);
+    } catch (error) {
+      this.error.set(this.messageFor(error, 'Não foi possível iniciar o teste de microfone.'));
+    }
+  }
+  private stopMicTest(): void {
+    const test = this.micTest;
+    if (!test) return;
+    this.micTest = undefined;
+    this.micTestActive.set(false);
+    this.micLevel.set(0);
+    test.source.disconnect();
+    test.worklet.disconnect();
+    test.stream.getTracks().forEach((track) => track.stop());
+    void test.context.close().catch(() => undefined);
+  }
   protected async toggleCamera(preserveNavigation = false): Promise<void> {
     if (!this.voiceRoom) return;
     this.loading.set(true); this.error.set('');
@@ -645,6 +836,7 @@ export class AppComponent implements OnInit, OnDestroy {
           audio.autoplay = true; audio.srcObject = stream;
           document.body.appendChild(audio);
           this.peerMediaAudioElements.set(audioID, audio);
+          this.applyOutputAudioSettings();
         }
         return;
       }
@@ -1141,11 +1333,18 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const settings = await window.desktop.settings.get();
       this.hardwareAcceleration.set(settings.hardwareAcceleration);
+      this.noiseFilterEnabled.set(settings.noiseFilter);
+      this.appVersion.set(settings.appVersion);
+      this.inputVolumeDb.set(settings.inputVolumeDb);
+      this.inputDeviceId.set(settings.inputDeviceId);
+      this.outputDeviceId.set(settings.outputDeviceId);
+      this.outputVolume.set(settings.outputVolume);
       this.hardwareAccelerationRestartRequired.set(settings.hardwareAcceleration !== settings.active);
     } catch { /* Defaults remain until the user toggles the setting. */ }
+    void this.refreshAudioDevices();
     this.settingsOpen.set(true);
   }
-  protected closeSettings(): void { this.settingsOpen.set(false); }
+  protected closeSettings(): void { this.stopMicTest(); this.settingsOpen.set(false); }
   protected async toggleHardwareAcceleration(event: Event): Promise<void> {
     const enabled = (event.target as HTMLInputElement).checked;
     this.hardwareAcceleration.set(enabled);
@@ -1237,6 +1436,37 @@ const maxPeerMediaRetryAttempts = 3;
 
 function peerMediaKey(userID: number, kind: PeerMediaKind): string {
   return `${userID}:${kind}`;
+}
+
+const callMiniPreviewPositionStorageKey = 'call-mini-preview-placement';
+const callMiniPreviewMinWidth = 240;
+const callMiniPreviewMaxWidth = 1920;
+
+function callMiniPreviewMaxWidthForViewport(): number {
+  const maxByWidth = window.innerWidth - 16;
+  const maxByHeight = Math.max(callMiniPreviewMinWidth, (window.innerHeight - 104) * 16 / 9);
+  return Math.min(callMiniPreviewMaxWidth, maxByWidth, maxByHeight);
+}
+
+function readCallMiniPreviewPlacement(): { position: { x: number; y: number } | null; width: number | null } {
+  try {
+    const raw = localStorage.getItem(callMiniPreviewPositionStorageKey);
+    if (!raw) return { position: null, width: null };
+    const value = JSON.parse(raw) as { x?: unknown; y?: unknown; width?: unknown };
+    const position = typeof value.x === 'number' && typeof value.y === 'number' ? { x: value.x, y: value.y } : null;
+    const width = typeof value.width === 'number' && value.width >= callMiniPreviewMinWidth
+      ? Math.min(value.width, callMiniPreviewMaxWidthForViewport())
+      : null;
+    return { position, width };
+  } catch {
+    return { position: null, width: null };
+  }
+}
+
+function writeCallMiniPreviewPlacement(position: { x: number; y: number } | null, width: number | null): void {
+  try {
+    localStorage.setItem(callMiniPreviewPositionStorageKey, JSON.stringify({ ...position, ...(width !== null ? { width } : {}) }));
+  } catch { /* Storage may be unavailable. */ }
 }
 
 function validPeerSessionID(sessionID: unknown): string | undefined {

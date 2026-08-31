@@ -111,8 +111,9 @@
     <aside class="members-sidebar" aria-label="Membros do servidor">@if (selectedServer()) { <header><strong>Membros</strong><span>{{ members().length }}</span></header><div class="member-list">@for (member of members(); track member.id) { <div class="member" [class.online]="member.online"><span class="member-avatar">{{ member.username.slice(0, 1).toUpperCase() }}</span><div><strong>{{ member.username }}</strong><small>{{ member.online ? 'online' : 'offline' }}</small></div><span class="presence-dot" [class.online]="member.online"></span></div> }</div> }</aside>
     @if (miniCallPreview(); as preview) {
       @if (preview.visible && voiceChannel(); as channel) {
-        <aside class="call-mini-preview" [class.reconnecting]="preview.state === 'reconnecting'" aria-label="Prévia da chamada em andamento">
-          <header class="call-mini-header">
+        <aside class="call-mini-preview" [class.reconnecting]="preview.state === 'reconnecting'" [class.dragged]="callMiniPreviewPosition() !== null" [style.left.px]="callMiniPreviewPosition()?.x" [style.top.px]="callMiniPreviewPosition()?.y" [style.width.px]="callMiniPreviewWidth()" aria-label="Prévia da chamada em andamento">
+          <span class="call-mini-resize" role="separator" aria-label="Redimensionar prévia da chamada" (pointerdown)="startCallMiniResize($event)" (pointermove)="moveCallMiniResize($event)" (pointerup)="endCallMiniResize($event)" (pointercancel)="endCallMiniResize($event)"></span>
+          <header class="call-mini-header" (pointerdown)="startCallMiniDrag($event)" (pointermove)="moveCallMiniDrag($event)" (pointerup)="endCallMiniDrag($event)" (pointercancel)="endCallMiniDrag($event)">
             <span class="call-mini-live-dot" aria-hidden="true"></span>
             <div><strong>{{ channel.name }}</strong><small>{{ preview.state === 'reconnecting' ? 'Reconectando…' : 'Chamada em andamento' }}</small></div>
             <button type="button" title="Voltar para a chamada" aria-label="Voltar para a chamada ativa" (click)="returnToVoiceCall()">
@@ -213,6 +214,30 @@
     <section class="modal-backdrop" (click)="closeSettings()">
       <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" (click)="$event.stopPropagation()">
         <h2 id="settings-title">Configurações</h2>
+        <h3 class="settings-section-title">Voz e áudio</h3>
+        <div class="setting-row setting-row-column">
+          <div class="setting-row-head"><strong>Dispositivo de entrada</strong></div>
+          <select class="setting-select" [value]="inputDeviceId() ?? ''" (change)="selectInputDevice($any($event.target).value)">
+            <option value="">Padrão do sistema</option>
+            @for (device of inputDevices(); track device.deviceId) { <option [value]="device.deviceId">{{ device.label || device.deviceId }}</option> }
+          </select>
+          <label class="setting-slider"><span>Volume de entrada <strong>{{ inputVolumeDb() > 0 ? '+' : '' }}{{ inputVolumeDb() }} dB</strong></span><input type="range" min="-30" max="30" step="1" [value]="inputVolumeDb()" (input)="setInputVolume(+$any($event.target).value)"></label>
+          <div class="setting-meter" aria-hidden="true"><span class="setting-meter-fill" [style.width.%]="micLevel() * 100"></span></div>
+          <button class="setting-test-button" type="button" (click)="toggleMicTest()">{{ micTestActive() ? 'Parar teste' : 'Testar microfone' }}</button>
+        </div>
+        <div class="setting-row setting-row-column">
+          <div class="setting-row-head"><strong>Dispositivo de saída</strong></div>
+          <select class="setting-select" [value]="outputDeviceId() ?? ''" (change)="selectOutputDevice($any($event.target).value)">
+            <option value="">Padrão do sistema</option>
+            @for (device of outputDevices(); track device.deviceId) { <option [value]="device.deviceId">{{ device.label || device.deviceId }}</option> }
+          </select>
+          <label class="setting-slider"><span>Volume de saída <strong>{{ (outputVolume() * 100).toFixed(0) }}%</strong></span><input type="range" min="0" max="2" step="0.05" [value]="outputVolume()" (input)="setOutputVolume(+$any($event.target).value)"></label>
+        </div>
+        <div class="setting-row">
+          <div><strong>Supressão de ruído (RNNoise)</strong><p>Rede neural local que remove ventilador, ambiente e parte do teclado do microfone. Roda offline, aplica na hora.</p></div>
+          <label class="setting-switch"><input type="checkbox" name="noiseFilter" [checked]="noiseFilterEnabled()" (change)="toggleNoiseFilter($any($event.target).checked)"><span class="setting-track" aria-hidden="true"></span></label>
+        </div>
+        <h3 class="settings-section-title">Sistema</h3>
         <div class="setting-row">
           <div><strong>Aceleração de hardware</strong><p>Usa a GPU para renderizar a interface e os vídeos. Desative em caso de travamentos, tela piscando ou driver problemático.</p></div>
           <label class="setting-switch"><input type="checkbox" name="hardwareAcceleration" [checked]="hardwareAcceleration()" (change)="toggleHardwareAcceleration($event)"><span class="setting-track" aria-hidden="true"></span></label>
@@ -222,6 +247,7 @@
           <div class="confirmation-actions"><button class="confirm-leave" type="button" (click)="relaunchApp()">Reiniciar agora</button></div>
         }
         <div class="confirmation-actions"><button type="button" (click)="closeSettings()">Fechar</button></div>
+        <p class="settings-version">brigames-station {{ appVersion() }}</p>
       </section>
     </section>
   }
