@@ -32,7 +32,7 @@
               @if (voiceMembers(channel.id).length > 0) {
                 <div class="voice-participants">
                   @for (member of voiceMembers(channel.id); track member.id) {
-                    <div>
+                    <div class="voice-participant-row">
                       <span class="voice-participant-avatar" [class.speaking]="isVoiceMemberSpeaking(member)">{{ member.username.slice(0, 1).toUpperCase() }}</span>
                       <span class="voice-participant-name">{{ member.username }}</span>
                       <span class="voice-participant-actions">
@@ -59,7 +59,24 @@
                             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg>
                           </span>
                         }
+                        @if (voiceChannel()?.id === channel.id && !isCurrentVoiceMember(member)) {
+                          <button class="voice-media-indicator participant-audio-trigger" type="button" [class.watching]="participantAudioPreference(member.id).muted || participantAudioPreference(member.id).volume !== 1" [attr.aria-expanded]="participantAudioMenuUserID() === member.id" [title]="'Ajustar volume de ' + member.username" [attr.aria-label]="'Ajustar volume local de ' + member.username" (click)="toggleParticipantAudioMenu(member.id)">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
+                          </button>
+                        }
                       </span>
+                      @if (participantAudioMenuUserID() === member.id) {
+                        @if (participantAudioPreference(member.id); as audioPreference) {
+                          <section class="participant-audio-popover" role="dialog" [attr.aria-label]="'Volume local de ' + member.username" (click)="$event.stopPropagation()">
+                            <header><div><strong>{{ member.username }}</strong><small>Somente para você</small></div><span>{{ (audioPreference.volume * 100).toFixed(0) }}%</span></header>
+                            <label><span>Volume</span><input type="range" min="0" max="100" step="1" [value]="audioPreference.volume * 100" [attr.aria-label]="'Volume local de ' + member.username" (input)="setParticipantVolume(member.id, +$any($event.target).value)"></label>
+                            <div class="participant-audio-actions">
+                              <button type="button" [class.locally-muted]="audioPreference.muted" (click)="toggleParticipantLocalMute(member.id)">{{ audioPreference.muted ? 'Ouvir novamente' : 'Silenciar para mim' }}</button>
+                              <button type="button" (click)="resetParticipantVolume(member.id)">Redefinir volume</button>
+                            </div>
+                          </section>
+                        }
+                      }
                     </div>
                   }
                   @if (voiceChannel()?.id === channel.id) {

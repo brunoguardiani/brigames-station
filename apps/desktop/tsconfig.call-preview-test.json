@@ -9,7 +9,9 @@
   },
   "include": [
     "src/app/call-mini-preview-state.ts",
-    "tests/call-mini-preview-state.test.ts"
+    "src/app/participant-audio.service.ts",
+    "tests/call-mini-preview-state.test.ts",
+    "tests/participant-audio.service.test.ts"
   ],
   "exclude": []
 }

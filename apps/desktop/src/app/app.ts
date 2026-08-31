@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { LocalAudioTrack, Room, RoomEvent, Track } from 'livekit-client';
 import type { AudioCaptureOptions } from 'livekit-client';
 import { deriveCallMiniPreviewModel, type CallMediaDescriptor } from './call-mini-preview-state';
+import { ParticipantAudioService, type ParticipantAudioPreference } from './participant-audio.service';
 import { MicProcessor, createMicWorkletNode, decibelsToLinearGain } from './rnnoise/mic-processor';
 
 type BackendState = 'checking' | 'available' | 'unavailable';
@@ -69,6 +70,8 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly inputDeviceId = signal<string | null>(null);
   protected readonly outputDeviceId = signal<string | null>(null);
   protected readonly outputVolume = signal(1);
+  protected readonly participantAudioMenuUserID = signal<number | null>(null);
+  protected readonly participantAudioRevision = signal(0);
   protected readonly inputDevices = signal<MediaDeviceInfo[]>([]);
   protected readonly outputDevices = signal<MediaDeviceInfo[]>([]);
   protected readonly micLevel = signal(0);
@@ -117,9 +120,19 @@ export class AppComponent implements OnInit, OnDestroy {
   private removeUpdaterStatusListener?: () => void;
   private updaterStatusRevision = 0;
   private voiceRoom?: Room;
-  private voiceAudioElements: HTMLAudioElement[] = [];
+  private readonly participantAudio = new ParticipantAudioService({
+    load: async () => {
+      const settings = await window.desktop.settings.get();
+      this.outputDeviceId.set(settings.outputDeviceId);
+      this.outputVolume.set(settings.outputVolume);
+      this.participantAudio.setOutput(settings.outputVolume, settings.outputDeviceId);
+      return settings.participantAudioPreferences;
+    },
+    save: (userID, preference) => window.desktop.settings.setParticipantAudio(userID, preference),
+  }, () => this.participantAudioRevision.update((revision) => revision + 1));
+  private voiceAudioElements = new Map<string, ParticipantAudioElement>();
   private peerMediaElements: PeerMediaElement[] = [];
-  private peerMediaAudioElements = new Map<string, HTMLAudioElement>();
+  private peerMediaAudioElements = new Map<string, ParticipantAudioElement>();
   private voiceAudioContext?: AudioContext;
   private peerMediaConfiguration?: RTCConfiguration;
   private localPeerMedia = new Map<PeerMediaKind, MediaStream>();
@@ -133,6 +146,7 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     void this.refreshBackendStatus();
     void this.restoreSession();
+    void this.participantAudio.restore().catch((error) => console.warn('[voice] unable to restore participant volumes', error));
     this.removeUpdaterStatusListener = window.desktop.updater.onStatusChange((status) => {
       this.updaterStatusRevision += 1;
       this.applyUpdaterStatus(status);
@@ -193,6 +207,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.removeRealtimeVoicePresenceListener?.();
     this.removeWebRTCSignalListener?.();
     this.removeUpdaterStatusListener?.();
+    void this.participantAudio.flushPersistence();
     void this.leaveVoiceChannel();
   }
 
@@ -228,6 +243,7 @@ export class AppComponent implements OnInit, OnDestroy {
     document.querySelectorAll<HTMLDetailsElement>('details.create-server[open], details.join-server[open], details.actions[open]').forEach((details) => {
       if (details !== containingDetails) details.open = false;
     });
+    if (!target.closest('.participant-audio-popover, .participant-audio-trigger')) this.participantAudioMenuUserID.set(null);
   }
   protected async login(): Promise<void> {
     this.loading.set(true); this.error.set('');
@@ -289,16 +305,26 @@ export class AppComponent implements OnInit, OnDestroy {
       room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
         if (track.kind === Track.Kind.Audio) {
           const audio = track.attach();
+          const audioID = publication.trackSid;
+          this.removeVoiceAudioElement(audioID);
           document.body.appendChild(audio);
-          this.voiceAudioElements.push(audio);
-          this.applyOutputAudioSettings();
+          this.voiceAudioElements.set(audioID, { userID: participant.identity, element: audio });
+          this.participantAudio.register(participant.identity, audio);
         }
+      });
+      room.on(RoomEvent.TrackUnsubscribed, (track, publication) => {
+        if (track.kind === Track.Kind.Audio) this.removeVoiceAudioElement(publication.trackSid);
       });
       room.on(RoomEvent.ParticipantConnected, () => {
         refreshParticipants();
         if (this.voiceRoom === room) this.playVoiceSound('join');
       });
-      room.on(RoomEvent.ParticipantDisconnected, () => {
+      room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+        this.removeVoiceAudioForUser(participant.identity);
+        const participantAudioMenuUserID = this.participantAudioMenuUserID();
+        if (participantAudioMenuUserID !== null && String(participantAudioMenuUserID) === participant.identity) {
+          this.participantAudioMenuUserID.set(null);
+        }
         refreshParticipants();
         if (this.voiceRoom === room) this.playVoiceSound('leave');
       });
@@ -357,6 +383,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.screenSharing.set(false);
     this.cameraEnabled.set(false);
     this.screenSharePickerOpen.set(false);
+    this.participantAudioMenuUserID.set(null);
     this.voiceMediaVisible.set(false);
     this.removeVoiceAudio();
     this.closePeerMedia();
@@ -508,12 +535,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.applyOutputAudioSettings();
   }
   private applyOutputAudioSettings(): void {
-    const volume = this.outputVolume();
-    const deviceID = this.outputDeviceId();
-    for (const element of [...this.voiceAudioElements, ...this.peerMediaAudioElements.values()]) {
-      element.volume = volume;
-      if (deviceID) void element.setSinkId(deviceID).catch(() => undefined);
-    }
+    this.participantAudio.setOutput(this.outputVolume(), this.outputDeviceId());
   }
   private async refreshAudioDevices(): Promise<void> {
     try {
@@ -831,12 +853,17 @@ export class AppComponent implements OnInit, OnDestroy {
       if (event.track.kind === 'audio') {
         console.info('[webrtc] remote audio track received', { remoteUserID, kind });
         const audioID = `remote:${remoteUserID}:${kind}:audio`;
-        if (!this.peerMediaAudioElements.has(audioID)) {
+        const existingAudio = this.peerMediaAudioElements.get(audioID);
+        if (existingAudio) {
+          existingAudio.element.srcObject = stream;
+          this.participantAudio.register(existingAudio.userID, existingAudio.element);
+        } else {
           const audio = document.createElement('audio');
           audio.autoplay = true; audio.srcObject = stream;
           document.body.appendChild(audio);
-          this.peerMediaAudioElements.set(audioID, audio);
-          this.applyOutputAudioSettings();
+          const userID = String(remoteUserID);
+          this.peerMediaAudioElements.set(audioID, { userID, element: audio });
+          this.participantAudio.register(userID, audio);
         }
         return;
       }
@@ -970,8 +997,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (peer.direction === 'incoming' && !this.findPeerConnection('incoming', peer.remoteUserID, peer.kind)) {
       this.removePeerMediaVideo(`remote:${peer.remoteUserID}:${peer.kind}`);
       const audioID = `remote:${peer.remoteUserID}:${peer.kind}:audio`;
-      this.peerMediaAudioElements.get(audioID)?.remove();
-      this.peerMediaAudioElements.delete(audioID);
+      this.removePeerMediaAudioElement(audioID);
     }
   }
   private closePeerConnections(direction: PeerDirection, remoteUserID: number, kind: PeerMediaKind): void {
@@ -1015,7 +1041,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.pendingPeerMediaRemovals.clear();
     for (const item of this.peerMediaElements) item.element.remove();
     this.peerMediaElements = [];
-    for (const audio of this.peerMediaAudioElements.values()) audio.remove();
+    for (const audioID of [...this.peerMediaAudioElements.keys()]) this.removePeerMediaAudioElement(audioID);
     this.peerMediaAudioElements.clear();
     this.availablePeerMedia.set([]);
     this.featuredPeerMediaID.set(null);
@@ -1297,7 +1323,42 @@ export class AppComponent implements OnInit, OnDestroy {
   protected voiceMembers(channelID: number): ServerMember[] { return this.members().filter((member) => member.voice_channel_id === channelID); }
   protected isVoiceMemberSpeaking(member: ServerMember): boolean { return this.activeSpeakerIDs().includes(String(member.id)); }
   protected isVoiceMemberMuted(member: ServerMember): boolean { return this.voiceParticipants().find((participant) => participant.identity === String(member.id))?.muted ?? false; }
-  private removeVoiceAudio(): void { for (const audio of this.voiceAudioElements) audio.remove(); this.voiceAudioElements = []; }
+  protected isCurrentVoiceMember(member: ServerMember): boolean { return member.id === this.currentUserID(); }
+  protected participantAudioPreference(userID: number): ParticipantAudioPreference {
+    this.participantAudioRevision();
+    return this.participantAudio.getPreference(String(userID));
+  }
+  protected toggleParticipantAudioMenu(userID: number): void {
+    this.participantAudioMenuUserID.update((current) => current === userID ? null : userID);
+  }
+  protected setParticipantVolume(userID: number, volumePercent: number): void {
+    this.participantAudio.setVolume(String(userID), volumePercent / 100);
+  }
+  protected toggleParticipantLocalMute(userID: number): void {
+    const preference = this.participantAudio.getPreference(String(userID));
+    this.participantAudio.setMuted(String(userID), !preference.muted);
+  }
+  protected resetParticipantVolume(userID: number): void { this.participantAudio.reset(String(userID)); }
+  private removeVoiceAudioElement(audioID: string): void {
+    const audio = this.voiceAudioElements.get(audioID);
+    if (!audio) return;
+    this.participantAudio.unregister(audio.userID, audio.element);
+    audio.element.remove();
+    this.voiceAudioElements.delete(audioID);
+  }
+  private removeVoiceAudioForUser(userID: string): void {
+    for (const [audioID, audio] of this.voiceAudioElements) {
+      if (audio.userID === userID) this.removeVoiceAudioElement(audioID);
+    }
+  }
+  private removeVoiceAudio(): void { for (const audioID of [...this.voiceAudioElements.keys()]) this.removeVoiceAudioElement(audioID); }
+  private removePeerMediaAudioElement(audioID: string): void {
+    const audio = this.peerMediaAudioElements.get(audioID);
+    if (!audio) return;
+    this.participantAudio.unregister(audio.userID, audio.element);
+    audio.element.remove();
+    this.peerMediaAudioElements.delete(audioID);
+  }
   private playVoiceSound(event: 'join' | 'leave' | 'mute' | 'unmute'): void {
     const context = this.voiceAudioContext ??= new AudioContext();
     const notes = event === 'join' ? [523, 659] : event === 'leave' ? [440, 330] : event === 'mute' ? [330] : [523];
@@ -1406,6 +1467,7 @@ type PeerDirection = 'incoming' | 'outgoing';
 type PeerSignalKind = 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch';
 type IncomingPeerSignal = { channel_id: number; from_user_id: number; kind: PeerSignalKind; session_id?: string; payload: unknown };
 type PeerMediaAvailability = { channelID: number; userID: number; name: string; kind: PeerMediaKind };
+type ParticipantAudioElement = { userID: string; element: HTMLAudioElement };
 type PeerMediaConnection = { sessionID: string; connection: RTCPeerConnection; direction: PeerDirection; remoteUserID: number; kind: PeerMediaKind; pendingCandidates: RTCIceCandidateInit[]; disconnectTimer?: ReturnType<typeof setTimeout> };
 type PendingPeerCandidates = { remoteUserID: number; kind: PeerMediaKind; candidates: RTCIceCandidateInit[] };
 type PeerMediaElement = { id: string; element: HTMLElement; video: HTMLVideoElement; label: HTMLSpanElement; highlightButton: HTMLButtonElement; previewButton?: HTMLButtonElement; effectButton?: HTMLButtonElement; kind: PeerMediaKind; participantIdentity: string };
