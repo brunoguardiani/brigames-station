@@ -33,7 +33,8 @@ type Channel struct {
 }
 
 type Member struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
+	ID       int64   `json:"id"`
+	Username string  `json:"username"`
+	Role     string  `json:"role"`
+	AvatarID *string `json:"avatar_id"`
 }

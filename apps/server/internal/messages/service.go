@@ -21,6 +21,7 @@ type Message struct {
 	ChannelID      int64     `json:"channel_id"`
 	AuthorID       int64     `json:"author_id"`
 	AuthorUsername string    `json:"author_username"`
+	AuthorAvatarID *string   `json:"author_avatar_id"`
 	Content        string    `json:"content"`
 	CreatedAt      time.Time `json:"created_at"`
 }
@@ -38,7 +39,7 @@ func (s *Service) Create(ctx context.Context, userID, channelID int64, content s
 		return Message{}, fmt.Errorf("%w: content must contain 1 to 4000 characters", ErrValidation)
 	}
 	var item Message
-	err := s.pool.QueryRow(ctx, "WITH created AS (INSERT INTO messages (channel_id, author_id, content) SELECT channels.id, $2, $3 FROM channels JOIN server_memberships ON server_memberships.server_id = channels.server_id WHERE channels.id = $1 AND server_memberships.user_id = $2 RETURNING id, channel_id, author_id, content, created_at) SELECT created.id, created.channel_id, created.author_id, users.username, created.content, created.created_at FROM created JOIN users ON users.id = created.author_id", channelID, userID, content).Scan(&item.ID, &item.ChannelID, &item.AuthorID, &item.AuthorUsername, &item.Content, &item.CreatedAt)
+	err := s.pool.QueryRow(ctx, "WITH created AS (INSERT INTO messages (channel_id, author_id, content) SELECT channels.id, $2, $3 FROM channels JOIN server_memberships ON server_memberships.server_id = channels.server_id WHERE channels.id = $1 AND server_memberships.user_id = $2 RETURNING id, channel_id, author_id, content, created_at) SELECT created.id, created.channel_id, created.author_id, users.username, users.avatar_id, created.content, created.created_at FROM created JOIN users ON users.id = created.author_id", channelID, userID, content).Scan(&item.ID, &item.ChannelID, &item.AuthorID, &item.AuthorUsername, &item.AuthorAvatarID, &item.Content, &item.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Message{}, ErrNotFound
 	}
@@ -85,7 +86,7 @@ func (s *Service) List(ctx context.Context, userID, channelID, before int64, lim
 	if !allowed {
 		return Page{}, ErrNotFound
 	}
-	rows, err := s.pool.Query(ctx, "SELECT messages.id, messages.channel_id, messages.author_id, users.username, messages.content, messages.created_at FROM messages JOIN users ON users.id = messages.author_id WHERE messages.channel_id = $1 AND ($2 = 0 OR messages.id < $2) ORDER BY messages.id DESC LIMIT $3", channelID, before, limit)
+	rows, err := s.pool.Query(ctx, "SELECT messages.id, messages.channel_id, messages.author_id, users.username, users.avatar_id, messages.content, messages.created_at FROM messages JOIN users ON users.id = messages.author_id WHERE messages.channel_id = $1 AND ($2 = 0 OR messages.id < $2) ORDER BY messages.id DESC LIMIT $3", channelID, before, limit)
 	if err != nil {
 		return Page{}, fmt.Errorf("list messages: %w", err)
 	}
@@ -93,7 +94,7 @@ func (s *Service) List(ctx context.Context, userID, channelID, before int64, lim
 	page := Page{Messages: make([]Message, 0)}
 	for rows.Next() {
 		var item Message
-		if err := rows.Scan(&item.ID, &item.ChannelID, &item.AuthorID, &item.AuthorUsername, &item.Content, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.ChannelID, &item.AuthorID, &item.AuthorUsername, &item.AuthorAvatarID, &item.Content, &item.CreatedAt); err != nil {
 			return Page{}, fmt.Errorf("scan message: %w", err)
 		}
 		page.Messages = append(page.Messages, item)

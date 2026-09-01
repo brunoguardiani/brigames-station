@@ -142,6 +142,28 @@ paths:
                 $ref: '#/components/schemas/User'
         '401':
           $ref: '#/components/responses/Unauthorized'
+    patch:
+      summary: Update the authenticated user's avatar
+      operationId: updateCurrentUserAvatar
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAvatarRequest'
+      responses:
+        '200':
+          description: Avatar updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /servers:
     get:
       summary: List the authenticated user's servers
@@ -545,7 +567,7 @@ components:
           const: 900
     User:
       type: object
-      required: [id, username, email, role]
+      required: [id, username, email, role, avatar_id]
       properties:
         id:
           type: integer
@@ -558,6 +580,16 @@ components:
         role:
           type: string
           enum: [owner, member]
+        avatar_id:
+          type: [string, 'null']
+          pattern: '^icon_(0[1-9]|1[0-5])$'
+    UpdateAvatarRequest:
+      type: object
+      required: [avatar_id]
+      properties:
+        avatar_id:
+          type: [string, 'null']
+          pattern: '^icon_(0[1-9]|1[0-5])$'
     CreateServerRequest:
       type: object
       required: [name]
@@ -627,11 +659,12 @@ components:
           format: date-time
     ServerMember:
       type: object
-      required: [id, username, role, online, voice_channel_id]
+      required: [id, username, role, avatar_id, online, voice_channel_id]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
         role: { type: string, enum: [owner, member] }
+        avatar_id: { type: [string, 'null'], pattern: '^icon_(0[1-9]|1[0-5])$' }
         online: { type: boolean }
         voice_channel_id:
           type: [integer, 'null']
@@ -653,12 +686,13 @@ components:
         content: { type: string, minLength: 1, maxLength: 4000 }
     Message:
       type: object
-      required: [id, channel_id, author_id, author_username, content, created_at]
+      required: [id, channel_id, author_id, author_username, author_avatar_id, content, created_at]
       properties:
         id: { type: integer, format: int64 }
         channel_id: { type: integer, format: int64 }
         author_id: { type: integer, format: int64 }
         author_username: { type: string }
+        author_avatar_id: { type: [string, 'null'], pattern: '^icon_(0[1-9]|1[0-5])$' }
         content: { type: string }
         created_at: { type: string, format: date-time }
     MessagePage:

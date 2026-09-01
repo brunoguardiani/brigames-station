@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('desktop', {
     login: (identity: string, password: string) => ipcRenderer.invoke('auth:login', identity, password),
     register: (username: string, email: string, password: string) => ipcRenderer.invoke('auth:register', username, email, password),
     currentSession: () => ipcRenderer.invoke('auth:current-session'),
+    updateAvatar: (avatarID: string | null) => ipcRenderer.invoke('auth:update-avatar', avatarID),
     logout: () => ipcRenderer.invoke('auth:logout'),
     onSessionExpired: (callback: () => void): (() => void) => {
       const listener = () => callback();
@@ -78,6 +79,11 @@ contextBridge.exposeInMainWorld('desktop', {
       const listener = (_event: Electron.IpcRendererEvent, presence: unknown) => callback(presence);
       ipcRenderer.on('realtime:voice-presence-changed', listener);
       return () => ipcRenderer.removeListener('realtime:voice-presence-changed', listener);
+    },
+    onProfileUpdated: (callback: (profile: unknown) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, profile: unknown) => callback(profile);
+      ipcRenderer.on('realtime:profile-updated', listener);
+      return () => ipcRenderer.removeListener('realtime:profile-updated', listener);
     },
     sendWebRTCSignal: (signal: unknown) => ipcRenderer.invoke('realtime:send-webrtc-signal', signal),
     onWebRTCSignal: (callback: (signal: unknown) => void): (() => void) => {

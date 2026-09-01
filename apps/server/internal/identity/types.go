@@ -7,13 +7,15 @@ var (
 	ErrConflict             = errors.New("username or email already exists")
 	ErrInvalidCredentials   = errors.New("invalid credentials")
 	ErrInvalidRefreshToken  = errors.New("invalid refresh token")
+	ErrInvalidAvatar        = errors.New("invalid avatar")
 )
 
 type User struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
+	ID       int64   `json:"id"`
+	Username string  `json:"username"`
+	Email    string  `json:"email"`
+	Role     string  `json:"role"`
+	AvatarID *string `json:"avatar_id"`
 }
 
 type Tokens struct {

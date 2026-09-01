@@ -102,7 +102,7 @@ func (service *Service) ListMembers(ctx context.Context, userID, serverID int64)
 	if _, err := service.Get(ctx, userID, serverID); err != nil {
 		return nil, err
 	}
-	rows, err := service.pool.Query(ctx, "SELECT users.id, users.username, server_memberships.role FROM server_memberships JOIN users ON users.id = server_memberships.user_id WHERE server_memberships.server_id = $1 ORDER BY users.username, users.id", serverID)
+	rows, err := service.pool.Query(ctx, "SELECT users.id, users.username, server_memberships.role, users.avatar_id FROM server_memberships JOIN users ON users.id = server_memberships.user_id WHERE server_memberships.server_id = $1 ORDER BY users.username, users.id", serverID)
 	if err != nil {
 		return nil, fmt.Errorf("list server members: %w", err)
 	}
@@ -110,7 +110,7 @@ func (service *Service) ListMembers(ctx context.Context, userID, serverID int64)
 	items := make([]Member, 0)
 	for rows.Next() {
 		var item Member
-		if err := rows.Scan(&item.ID, &item.Username, &item.Role); err != nil {
+		if err := rows.Scan(&item.ID, &item.Username, &item.Role, &item.AvatarID); err != nil {
 			return nil, fmt.Errorf("scan server member: %w", err)
 		}
 		items = append(items, item)

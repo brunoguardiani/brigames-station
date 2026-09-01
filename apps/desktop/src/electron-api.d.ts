@@ -19,9 +19,10 @@ interface Window {
       onStatusChange(callback: (status: DesktopUpdaterStatus) => void): () => void;
     };
     auth: {
-      login(identity: string, password: string): Promise<{ username: string; email: string; role: string }>;
-      register(username: string, email: string, password: string): Promise<{ username: string; email: string; role: string }>;
-      currentSession(): Promise<{ username: string; email: string; role: string } | null>;
+      login(identity: string, password: string): Promise<User>;
+      register(username: string, email: string, password: string): Promise<User>;
+      currentSession(): Promise<User | null>;
+      updateAvatar(avatarID: string | null): Promise<User>;
       logout(): Promise<void>;
       onSessionExpired(callback: () => void): () => void;
     };
@@ -58,6 +59,7 @@ interface Window {
       onMessageCreated(callback: (message: Message) => void): () => void;
       onPresenceChanged(callback: (presence: { user_id: number; online: boolean }) => void): () => void;
       onVoicePresenceChanged(callback: (presence: { server_id: number; user_id: number; channel_id: number | null }) => void): () => void;
+      onProfileUpdated(callback: (profile: { user_id: number; avatar_id: string | null }) => void): () => void;
       sendWebRTCSignal(signal: { channel_id: number; to_user_id: number; kind: 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch'; session_id?: string; payload: unknown }): Promise<void>;
       onWebRTCSignal(callback: (signal: { channel_id: number; from_user_id: number; kind: 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch'; session_id?: string; payload: unknown }) => void): () => void;
     };
@@ -73,6 +75,8 @@ interface Server {
   created_at: string;
 }
 
+interface User { id: number; username: string; email: string; role: string; avatar_id: string | null; }
+
 interface Channel {
   id: number;
   server_id: number;
@@ -82,6 +86,6 @@ interface Channel {
   created_by: number;
   created_at: string;
 }
-interface Message { id: number; channel_id: number; author_id: number; author_username: string; content: string; created_at: string; }
+interface Message { id: number; channel_id: number; author_id: number; author_username: string; author_avatar_id: string | null; content: string; created_at: string; }
 interface MessagePage { messages: Message[]; next_before: number | null; }
-interface ServerMember { id: number; username: string; role: 'owner' | 'member'; online: boolean; voice_channel_id: number | null; }
+interface ServerMember { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null; }

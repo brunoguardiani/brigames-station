@@ -114,16 +114,17 @@ function isTrustedRendererURL(url: string): boolean {
   }
 }
 
-type User = { username: string; email: string; role: string };
+type User = { id: number; username: string; email: string; role: string; avatar_id: string | null };
 type Tokens = { access_token: string; refresh_token: string; expires_in: number };
 type Server = { id: number; name: string; description: string; created_by: number; membership_role: 'owner' | 'member'; created_at: string };
-type ServerMember = { id: number; username: string; role: 'owner' | 'member'; online: boolean; voice_channel_id: number | null };
+type ServerMember = { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null };
 type Channel = { id: number; server_id: number; name: string; type: 'text' | 'voice'; position: number; created_by: number; created_at: string };
-type Message = { id: number; channel_id: number; author_id: number; author_username: string; content: string; created_at: string };
+type Message = { id: number; channel_id: number; author_id: number; author_username: string; author_avatar_id: string | null; content: string; created_at: string };
 type MessagePage = { messages: Message[]; next_before: number | null };
 type DisplaySourceCategory = 'window' | 'screen' | 'application';
 type DisplaySource = { id: string; name: string; thumbnail: string; icon?: string; kind: 'screen' | 'window'; category: DisplaySourceCategory };
 type VoicePresenceChanged = { server_id: number; user_id: number; channel_id: number | null };
+type ProfileUpdated = { user_id: number; avatar_id: string | null };
 type WebRTCSignalKind = 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch';
 type WebRTCSignal = { channel_id: number; to_user_id: number; kind: WebRTCSignalKind; session_id?: string; payload: unknown };
 type IncomingWebRTCSignal = Omit<WebRTCSignal, 'to_user_id'> & { from_user_id: number };
@@ -258,7 +259,7 @@ async function connectRealtime(): Promise<void> {
   socket.addEventListener('message', (event) => {
     if (realtimeSocket !== socket || typeof event.data !== 'string') return;
     try {
-      const message = JSON.parse(event.data) as { type?: string; data?: Message | VoicePresenceChanged | IncomingWebRTCSignal };
+      const message = JSON.parse(event.data) as { type?: string; data?: Message | VoicePresenceChanged | ProfileUpdated | IncomingWebRTCSignal };
       if (message.type === 'authenticated') {
         authenticated = true;
         realtimeRefreshRequired = false;
@@ -270,6 +271,8 @@ async function connectRealtime(): Promise<void> {
         sendToRenderers('realtime:presence-changed', message.data);
       } else if (message.type === 'voice.presence.changed' && message.data) {
         sendToRenderers('realtime:voice-presence-changed', message.data);
+      } else if (message.type === 'profile.updated' && message.data) {
+        sendToRenderers('realtime:profile-updated', message.data);
       } else if (message.type === 'webrtc.signal' && isIncomingWebRTCSignal(message.data)) {
         const signal = message.data;
         console.info('[webrtc] signal received from backend', { channelID: signal.channel_id, fromUserID: signal.from_user_id, kind: signal.kind });
@@ -555,6 +558,10 @@ ipcMain.handle('auth:current-session', async (): Promise<User | null> => {
     if (error instanceof SessionRefreshError && error.terminal) await invalidateSession();
     return null;
   }
+});
+ipcMain.handle('auth:update-avatar', (_event, avatarID: unknown): Promise<User> => {
+  if (avatarID !== null && (typeof avatarID !== 'string' || !/^icon_(0[1-9]|1[0-5])$/.test(avatarID))) throw new Error('Invalid avatar.');
+  return authenticatedRequest<User>('/me/avatar', 'PATCH', { avatar_id: avatarID as string | null });
 });
 ipcMain.handle('auth:logout', async (): Promise<void> => {
   const refreshToken = await loadRefreshToken();

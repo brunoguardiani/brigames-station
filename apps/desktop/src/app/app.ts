@@ -7,7 +7,7 @@ import { ParticipantAudioService, type ParticipantAudioPreference } from './part
 import { MicProcessor, createMicWorkletNode, decibelsToLinearGain } from './rnnoise/mic-processor';
 
 type BackendState = 'checking' | 'available' | 'unavailable';
-type User = { username: string; email: string; role: string };
+type User = { id: number; username: string; email: string; role: string; avatar_id: string | null };
 
 @Component({
   selector: 'app-root', changeDetection: ChangeDetectionStrategy.OnPush, imports: [FormsModule], templateUrl: './app.html', styleUrl: './app.css',
@@ -62,6 +62,9 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly screenPreviewEnabled = signal(false);
   protected readonly cameraPreviewEnabled = signal(true);
   protected readonly settingsOpen = signal(false);
+  protected readonly avatarSaving = signal(false);
+  protected readonly selectedAvatarID = signal<string | null>(null);
+  protected readonly availableAvatars = Array.from({ length: 15 }, (_, index) => `icon_${String(index + 1).padStart(2, '0')}`);
   protected readonly hardwareAcceleration = signal(true);
   protected readonly hardwareAccelerationRestartRequired = signal(false);
   protected readonly appVersion = signal('');
@@ -116,6 +119,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private removeRealtimeMessageListener?: () => void;
   private removeRealtimePresenceListener?: () => void;
   private removeRealtimeVoicePresenceListener?: () => void;
+  private removeRealtimeProfileListener?: () => void;
   private removeWebRTCSignalListener?: () => void;
   private removeUpdaterStatusListener?: () => void;
   private updaterStatusRevision = 0;
@@ -194,6 +198,9 @@ export class AppComponent implements OnInit, OnDestroy {
       if (this.selectedServer()?.id !== presence.server_id) return;
       this.members.update((members) => members.map((member) => member.id === presence.user_id ? { ...member, voice_channel_id: presence.channel_id } : member));
     });
+    this.removeRealtimeProfileListener = window.desktop.realtime.onProfileUpdated((profile) => {
+      this.applyAvatarUpdate(profile.user_id, profile.avatar_id);
+    });
     this.removeWebRTCSignalListener = window.desktop.realtime.onWebRTCSignal((signal) => {
       void this.handlePeerMediaSignal(signal).catch((error) => console.error('[webrtc] incoming signal failed', error instanceof Error ? error.message : String(error)));
     });
@@ -205,6 +212,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.removeRealtimeMessageListener?.();
     this.removeRealtimePresenceListener?.();
     this.removeRealtimeVoicePresenceListener?.();
+    this.removeRealtimeProfileListener?.();
     this.removeWebRTCSignalListener?.();
     this.removeUpdaterStatusListener?.();
     void this.participantAudio.flushPersistence();
@@ -1318,7 +1326,12 @@ export class AppComponent implements OnInit, OnDestroy {
     setTimeout(apply, 0);
   }
   private schedulePeerMediaLayout(): void { setTimeout(() => this.updatePeerMediaLayout(), 0); }
-  private currentUserID(): number { return this.members().find((member) => member.username === this.user()?.username)?.id ?? 0; }
+  private currentUserID(): number { return this.user()?.id ?? this.members().find((member) => member.username === this.user()?.username)?.id ?? 0; }
+  private applyAvatarUpdate(userID: number, avatarID: string | null): void {
+    this.user.update((user) => user?.id === userID ? { ...user, avatar_id: avatarID } : user);
+    this.members.update((members) => members.map((member) => member.id === userID ? { ...member, avatar_id: avatarID } : member));
+    this.messages.update((messages) => messages.map((message) => message.author_id === userID ? { ...message, author_avatar_id: avatarID } : message));
+  }
   protected isSpeaking(participant: VoiceParticipant): boolean { return this.activeSpeakerIDs().includes(participant.identity); }
   protected voiceMembers(channelID: number): ServerMember[] { return this.members().filter((member) => member.voice_channel_id === channelID); }
   protected isVoiceMemberSpeaking(member: ServerMember): boolean { return this.activeSpeakerIDs().includes(String(member.id)); }
@@ -1402,10 +1415,44 @@ export class AppComponent implements OnInit, OnDestroy {
       this.outputVolume.set(settings.outputVolume);
       this.hardwareAccelerationRestartRequired.set(settings.hardwareAcceleration !== settings.active);
     } catch { /* Defaults remain until the user toggles the setting. */ }
+    this.selectedAvatarID.set(this.user()?.avatar_id ?? null);
     void this.refreshAudioDevices();
     this.settingsOpen.set(true);
   }
-  protected closeSettings(): void { this.stopMicTest(); this.settingsOpen.set(false); }
+  protected avatarURL(avatarID: string | null | undefined): string | null {
+    return avatarID ? `assets/avatars/${avatarID}.png` : null;
+  }
+  protected voiceParticipantAvatarID(participant: VoiceParticipant): string | null {
+    const userID = Number(participant.identity);
+    if (Number.isSafeInteger(userID)) {
+      const memberAvatar = this.members().find((member) => member.id === userID)?.avatar_id;
+      if (memberAvatar !== undefined) return memberAvatar;
+      if (this.user()?.id === userID) return this.user()?.avatar_id ?? null;
+    }
+    return participant.name === this.user()?.username ? this.user()?.avatar_id ?? null : null;
+  }
+  protected selectAvatar(avatarID: string | null): void {
+    if (!this.avatarSaving()) this.selectedAvatarID.set(avatarID);
+  }
+  protected async saveSelectedAvatar(): Promise<void> {
+    const avatarID = this.selectedAvatarID();
+    if (this.avatarSaving() || this.user()?.avatar_id === avatarID) return;
+    this.avatarSaving.set(true);
+    try {
+      const updatedUser = await window.desktop.auth.updateAvatar(avatarID);
+      this.user.set(updatedUser);
+      this.applyAvatarUpdate(updatedUser.id, updatedUser.avatar_id);
+    } catch (error) {
+      this.error.set(this.messageFor(error, 'Não foi possível salvar o avatar.'));
+    } finally {
+      this.avatarSaving.set(false);
+    }
+  }
+  protected closeSettings(): void {
+    this.stopMicTest();
+    this.selectedAvatarID.set(this.user()?.avatar_id ?? null);
+    this.settingsOpen.set(false);
+  }
   protected async toggleHardwareAcceleration(event: Event): Promise<void> {
     const enabled = (event.target as HTMLInputElement).checked;
     this.hardwareAcceleration.set(enabled);
@@ -1482,7 +1529,7 @@ const cameraEffects: Array<{ id: CameraEffectID; label: string; filter: string }
   { id: 'vintage', label: 'Vintage', filter: 'sepia(0.4) saturate(1.4) contrast(1.05) brightness(1.05)' },
   { id: 'cold', label: 'Frio', filter: 'saturate(1.3) hue-rotate(15deg) brightness(1.05) contrast(1.05)' },
 ];
-type ServerMember = { id: number; username: string; role: 'owner' | 'member'; online: boolean; voice_channel_id: number | null };
+type ServerMember = { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null };
 
 const peerSessionIDPattern = /^[A-Za-z0-9_-]{1,64}$/;
 const peerMediaEncodingLimits: Record<PeerMediaKind, { maxBitrate: number; maxFramerate: number }> = {

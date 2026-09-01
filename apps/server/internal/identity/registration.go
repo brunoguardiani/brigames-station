@@ -34,7 +34,7 @@ func (service *Service) Register(ctx context.Context, username, email, password 
 	}
 
 	var user User
-	err = service.pool.QueryRow(ctx, "INSERT INTO users (username, email, password_hash, role_id) SELECT $1, $2, $3, id FROM roles WHERE key = 'member' RETURNING id, username, email, (SELECT key FROM roles WHERE roles.id = users.role_id)", username, email, hash).Scan(&user.ID, &user.Username, &user.Email, &user.Role)
+	err = service.pool.QueryRow(ctx, "INSERT INTO users (username, email, password_hash, role_id) SELECT $1, $2, $3, id FROM roles WHERE key = 'member' RETURNING id, username, email, (SELECT key FROM roles WHERE roles.id = users.role_id), avatar_id", username, email, hash).Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.AvatarID)
 	if err == nil {
 		return user, nil
 	}
