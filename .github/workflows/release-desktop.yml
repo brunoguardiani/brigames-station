@@ -121,7 +121,7 @@ jobs:
           expected_feed='https://github.com/brunoguardiani/brigames-station/releases/latest/download/appcast.xml'
           expected_key='1/K7+eGRHMy6hPZCqQcyVcgidr9F1LGrQbFCIE4c5Vo='
 
-          test "$(find apps/desktop/release -maxdepth 2 -type d -name 'brigames-station.app' | wc -l | tr -d ' ')" -eq 2
+          test "$(find apps/desktop/release -maxdepth 2 -type d -name 'brigames-station.app' | wc -l | tr -d ' ')" -eq 3
           while IFS= read -r application; do
             codesign --verify --deep --strict --verbose=2 "$application"
             codesign -dv --verbose=4 "$application"
@@ -133,18 +133,15 @@ jobs:
             ! grep -R -F -q 'SPARKLE_ED_PUBLIC_KEY_PLACEHOLDER' "$application"
           done < <(find apps/desktop/release -maxdepth 2 -type d -name 'brigames-station.app' | sort)
 
-          for archive in apps/desktop/release/*.zip; do
+          test "$(find apps/desktop/release -maxdepth 1 -name '*.zip' | wc -l | tr -d ' ')" -eq 1
+          for archive in apps/desktop/release/*-universal-mac.zip; do
             extract_dir="${RUNNER_TEMP}/$(basename "$archive" .zip)"
             ditto -x -k "$archive" "$extract_dir"
             test "$(find "$extract_dir" -maxdepth 1 -type d -name 'brigames-station.app' | wc -l | tr -d ' ')" -eq 1
             archived_app=$(find "$extract_dir" -maxdepth 1 -type d -name 'brigames-station.app')
             codesign --verify --deep --strict "$archived_app"
             architectures=$(lipo -archs "$archived_app/Contents/MacOS/brigames-station")
-            case "$(basename "$archive")" in
-              *-arm64-mac.zip) test "$architectures" = 'arm64' ;;
-              *-mac.zip) test "$architectures" = 'x86_64' ;;
-              *) echo "Unexpected macOS archive: $archive" >&2; exit 1 ;;
-            esac
+            test "$architectures" = 'x86_64 arm64' || test "$architectures" = 'arm64 x86_64'
           done
           test ! -e apps/desktop/release/latest-mac.yml
           ! find apps/desktop/release -maxdepth 1 -name '*-mac.zip.blockmap' -print | grep -q .
@@ -308,15 +305,12 @@ jobs:
           test -f "release-artifacts/$windows_path.blockmap"
 
           expected_prefix="https://github.com/brunoguardiani/brigames-station/releases/download/v${{ needs.version.outputs.value }}/"
-          mac_archives=(
-            "brigames-station-${{ needs.version.outputs.value }}-mac.zip"
-            "brigames-station-${{ needs.version.outputs.value }}-arm64-mac.zip"
-          )
+          mac_archives=("brigames-station-${{ needs.version.outputs.value }}-universal-mac.zip")
           for archive in "${mac_archives[@]}"; do
             test -f "release-artifacts/$archive"
             grep -F -q "url=\"${expected_prefix}${archive}\"" release-artifacts/appcast.xml
           done
-          test "$(grep -o 'sparkle:edSignature=' release-artifacts/appcast.xml | wc -l | tr -d ' ')" -ge 2
+          test "$(grep -o 'sparkle:edSignature=' release-artifacts/appcast.xml | wc -l | tr -d ' ')" -eq 1
           ! grep -R -F -q 'SPARKLE_ED_PUBLIC_KEY_PLACEHOLDER' release-artifacts
 
       - name: Create GitHub release

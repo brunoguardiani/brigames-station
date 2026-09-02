@@ -43,8 +43,12 @@ module.exports = {
   mac: {
     target: [
       { target: 'dmg', arch: ['x64', 'arm64'] },
-      { target: 'zip', arch: ['x64', 'arm64'] },
+      // Sparkle rejects multiple enclosures with the same bundle version.
+      // Use one universal ZIP for updates while retaining architecture-specific
+      // DMGs for the initial/manual installation.
+      { target: 'zip', arch: ['universal'] },
     ],
+    artifactName: 'brigames-station-${version}-${arch}-mac.${ext}',
     icon: 'build/brigames-station.icns',
     category: 'public.app-category.social-networking',
     extendInfo: {

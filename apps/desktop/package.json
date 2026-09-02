@@ -23,7 +23,7 @@
     "electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js",
     "dist:win": "pnpm run build && electron-builder --config electron-builder.config.js --win nsis --x64 --publish never",
     "prepare:mac-icon": "sh scripts/create-macos-icon.sh",
-    "dist:mac": "pnpm run build && pnpm run prepare:mac-icon && electron-builder --config electron-builder.config.js --mac dmg zip --x64 --arm64 --publish never && node scripts/cleanup-macos-update-metadata.cjs",
+    "dist:mac": "pnpm run build && pnpm run prepare:mac-icon && electron-builder --config electron-builder.config.js --mac dmg:x64 dmg:arm64 zip:universal --publish never && node scripts/cleanup-macos-update-metadata.cjs",
     "dist:linux": "pnpm run build && electron-builder --config electron-builder.config.js --linux AppImage deb --x64 --publish never"
   },
   "dependencies": {
