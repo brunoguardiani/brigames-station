@@ -308,9 +308,9 @@ jobs:
           mac_archives=("brigames-station-${{ needs.version.outputs.value }}-universal-mac.zip")
           for archive in "${mac_archives[@]}"; do
             test -f "release-artifacts/$archive"
-            grep -F -q "url=\"${expected_prefix}${archive}\"" release-artifacts/appcast.xml
+            current_enclosure=$(grep -F "url=\"${expected_prefix}${archive}\"" release-artifacts/appcast.xml)
+            test "$(printf '%s' "$current_enclosure" | grep -o 'sparkle:edSignature=' | wc -l | tr -d ' ')" -eq 1
           done
-          test "$(grep -o 'sparkle:edSignature=' release-artifacts/appcast.xml | wc -l | tr -d ' ')" -eq 1
           ! grep -R -F -q 'SPARKLE_ED_PUBLIC_KEY_PLACEHOLDER' release-artifacts
 
       - name: Create GitHub release
