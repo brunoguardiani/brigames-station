@@ -10,8 +10,10 @@
   "include": [
     "src/app/call-mini-preview-state.ts",
     "src/app/participant-audio.service.ts",
+    "src/app/participant-context-menu-state.ts",
     "tests/call-mini-preview-state.test.ts",
-    "tests/participant-audio.service.test.ts"
+    "tests/participant-audio.service.test.ts",
+    "tests/participant-context-menu-state.test.ts"
   ],
   "exclude": []
 }

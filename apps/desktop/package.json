@@ -17,7 +17,7 @@
   "scripts": {
     "build": "ng build && tsc -p electron/tsconfig.json",
     "test:updater": "tsc -p electron/tsconfig.test.json && node --test out/updater-tests/updater/updater.service.test.js",
-    "test:call-preview": "tsc -p tsconfig.call-preview-test.json && node --test out/call-preview-tests/tests/call-mini-preview-state.test.js out/call-preview-tests/tests/participant-audio.service.test.js",
+    "test:call-preview": "tsc -p tsconfig.call-preview-test.json && node --test out/call-preview-tests/tests/call-mini-preview-state.test.js out/call-preview-tests/tests/participant-audio.service.test.js out/call-preview-tests/tests/participant-context-menu-state.test.js",
     "test": "pnpm run test:updater && pnpm run test:call-preview",
     "serve": "ng serve --host 127.0.0.1 --port 4200",
     "electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js",
