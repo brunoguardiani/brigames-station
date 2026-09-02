@@ -29,6 +29,11 @@ class MicWorkletProcessor extends AudioWorkletProcessor {
     this.primed = false;
     this.meterCounter = 0;
     this.meterSum = 0;
+    this.meterSamples = 0;
+    this.limitThreshold = 0.9;
+    this.gateValue = 1;
+    this.gateAttack = 0.632;
+    this.gateRelease = 0.049;
     this.port.onmessage = (event) => {
       if (event.data && typeof event.data.rnnoise === 'boolean') this.rnnoise = event.data.rnnoise;
     };
@@ -58,10 +63,21 @@ class MicWorkletProcessor extends AudioWorkletProcessor {
       console.error('[mic-processor] rnnoise failed to start', error);
     });
   }
-  emitLevel(block) {
-    const rms = Math.sqrt(this.meterSum / block.length);
+  emitLevel() {
+    const rms = Math.sqrt(this.meterSum / Math.max(1, this.meterSamples));
     this.port.postMessage({ level: Math.min(1, rms * 4) });
     this.meterSum = 0;
+    this.meterSamples = 0;
+  }
+  countMeter(sample) {
+    this.meterSum += sample * sample;
+    this.meterSamples++;
+  }
+  limit(sample) {
+    const threshold = this.limitThreshold;
+    if (sample > threshold) return threshold + (1 - threshold) * Math.tanh((sample - threshold) / (1 - threshold));
+    if (sample < -threshold) return -threshold + (1 - threshold) * Math.tanh((sample + threshold) / (1 - threshold));
+    return sample;
   }
   ringLevel() {
     let available = this.outWrite - this.outRead;
@@ -77,28 +93,43 @@ class MicWorkletProcessor extends AudioWorkletProcessor {
       return true;
     }
     const gain = parameters.gain.length ? parameters.gain[0] : 1;
-    this.meterCounter++;
-    for (let i = 0; i < input.length; i++) this.meterSum += input[i] * input[i];
-    if (this.meterCounter >= 4) {
-      this.emitLevel(input);
-      this.meterCounter = 0;
-    }
     if (!this.ready || this.failed || !this.rnnoise) {
-      for (let i = 0; i < output.length; i++) output[i] = input[i] * gain;
+      for (let i = 0; i < output.length; i++) {
+        const sample = this.limit(input[i] * gain);
+        output[i] = sample;
+        this.countMeter(sample);
+      }
+      this.meterCounter++;
+      if (this.meterCounter >= 4) {
+        this.emitLevel();
+        this.meterCounter = 0;
+      }
       return true;
     }
     for (let i = 0; i < input.length; i++) {
-      this.inFrame[this.inFill++] = input[i] * gain;
+      this.inFrame[this.inFill++] = input[i];
       if (this.inFill === this.frameSize) {
         this.inView.set(this.inFrame);
         const voiceProbability = this.exports.j(this.state, this.outPtr, this.inPtr);
-        const gate = Math.max(0.1, Math.min(1, voiceProbability * 1.6));
+        const target = Math.min(1, Math.max(0, (voiceProbability - 0.1) / 0.25));
+        const coefficient = target > this.gateValue ? this.gateAttack : this.gateRelease;
+        const gateStart = this.gateValue;
+        const gateEnd = this.gateValue + coefficient * (target - this.gateValue);
+        this.gateValue = gateEnd;
         for (let j = 0; j < this.frameSize; j++) {
-          this.outRing[this.outWrite++] = this.outView[j] * gate;
+          const gate = gateStart + (gateEnd - gateStart) * ((j + 1) / this.frameSize);
+          const sample = this.limit(this.outView[j] * gate * gain);
+          this.outRing[this.outWrite++] = sample;
           if (this.outWrite === this.outRing.length) this.outWrite = 0;
+          this.countMeter(sample);
         }
         this.inFill = 0;
       }
+    }
+    this.meterCounter++;
+    if (this.meterCounter >= 4) {
+      this.emitLevel();
+      this.meterCounter = 0;
     }
     if (!this.primed) {
       if (this.ringLevel() < this.frameSize * 2) {
