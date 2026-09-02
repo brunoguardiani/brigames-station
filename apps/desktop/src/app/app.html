@@ -32,11 +32,31 @@
               @if (voiceMembers(channel.id).length > 0) {
                 <div class="voice-participants">
                   @for (member of voiceMembers(channel.id); track member.id) {
-                    <div class="voice-participant-row">
+                    <div class="voice-participant-row" [class.context-open]="participantContextMenu()?.participantID === member.id" [attr.tabindex]="isCurrentVoiceMember(member) ? null : 0" (contextmenu)="openParticipantContextMenu($event, member, channel.id)" (keydown)="openParticipantContextMenuFromKeyboard($event, member, channel.id)">
                       <span class="voice-participant-avatar" [class.speaking]="isVoiceMemberSpeaking(member)">@if (avatarURL(member.avatar_id); as avatar) { <img [src]="avatar" alt=""> } @else { {{ member.username.slice(0, 1).toUpperCase() }} }</span>
                       <span class="voice-participant-name">{{ member.username }}</span>
                       <span class="voice-participant-actions">
-                        @if (screenShareForMember(member.id, channel.id); as media) {
+                        @if (screenShareForMember(member.id, channel.id) && !isWatchingMemberMedia(member.id, channel.id, 'screen')) {
+                          <span class="participant-media-available screen" title="Compartilhando tela" aria-label="Compartilhando tela">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m10 9 4 2-4 2Z"/><path d="M8 22h8M12 18v4"/></svg>
+                          </span>
+                        }
+                        @if (cameraForMember(member.id, channel.id) && !isWatchingMemberMedia(member.id, channel.id, 'camera')) {
+                          <span class="participant-media-available camera" title="Câmera ligada" aria-label="Câmera ligada">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 10 4.5-2.25A1 1 0 0 1 21 8.65v6.7a1 1 0 0 1-1.5.9L15 14"/></svg>
+                          </span>
+                        }
+                        @if (isWatchingMemberMedia(member.id, channel.id, 'screen')) {
+                          <span class="selected-participant-media" title="Assistindo transmissão" aria-label="Assistindo transmissão">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m10 9 4 2-4 2Z"/><path d="M8 22h8M12 18v4"/></svg>
+                          </span>
+                        }
+                        @if (isWatchingMemberMedia(member.id, channel.id, 'camera')) {
+                          <span class="selected-participant-media" title="Assistindo câmera" aria-label="Assistindo câmera">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 10 4.5-2.25A1 1 0 0 1 21 8.65v6.7a1 1 0 0 1-1.5.9L15 14"/></svg>
+                          </span>
+                        }
+                        @if (legacyInlineParticipantMedia(); as media) {
                           <button class="voice-media-indicator" type="button" [class.watching]="isWatchingPeerMedia(media)" [attr.aria-pressed]="isWatchingPeerMedia(media)" [title]="isWatchingPeerMedia(media) ? 'Parar de assistir tela de ' + member.username : 'Assistir tela de ' + member.username" [attr.aria-label]="isWatchingPeerMedia(media) ? 'Parar de assistir compartilhamento de tela de ' + member.username : 'Assistir compartilhamento de tela de ' + member.username" (click)="watchPeerMedia(media)">
                             @if (isWatchingPeerMedia(media)) {
                               <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m8.5 10.5 2 2 4-4"/><path d="M8 22h8M12 18v4"/></svg>
@@ -45,7 +65,7 @@
                             }
                           </button>
                         }
-                        @if (cameraForMember(member.id, channel.id); as media) {
+                        @if (legacyInlineParticipantMedia(); as media) {
                           <button class="voice-media-indicator" type="button" [class.watching]="isWatchingPeerMedia(media)" [attr.aria-pressed]="isWatchingPeerMedia(media)" [title]="isWatchingPeerMedia(media) ? 'Parar de assistir câmera de ' + member.username : 'Assistir câmera de ' + member.username" [attr.aria-label]="isWatchingPeerMedia(media) ? 'Parar de assistir câmera de ' + member.username : 'Assistir câmera de ' + member.username" (click)="watchPeerMedia(media)">
                             @if (isWatchingPeerMedia(media)) {
                               <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 10 4.5-2.25A1 1 0 0 1 21 8.65v6.7a1 1 0 0 1-1.5.9L15 14"/><path d="m6.5 12 1.5 1.5 3-3"/></svg>
@@ -59,7 +79,12 @@
                             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg>
                           </span>
                         }
-                        @if (voiceChannel()?.id === channel.id && !isCurrentVoiceMember(member)) {
+                        @if (voiceChannel()?.id === channel.id && !isCurrentVoiceMember(member) && participantAudioPreference(member.id).muted) {
+                          <span class="voice-participant-muted locally-muted" title="Silenciado para você" aria-label="Silenciado para você">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg>
+                          </span>
+                        }
+                        @if (false && voiceChannel()?.id === channel.id && !isCurrentVoiceMember(member)) {
                           <button class="voice-media-indicator participant-audio-trigger" type="button" [class.watching]="participantAudioPreference(member.id).muted || participantAudioPreference(member.id).volume !== 1" [attr.aria-expanded]="participantAudioMenuUserID() === member.id" [title]="'Ajustar volume de ' + member.username" [attr.aria-label]="'Ajustar volume local de ' + member.username" (click)="toggleParticipantAudioMenu(member.id)">
                             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
                           </button>
@@ -88,6 +113,19 @@
             }
           } @empty { <p>Nenhum canal de voz ainda.</p> }
         </nav>
+        @if (participantContextMenu(); as menuState) {
+          @if (participantContextMember(); as contextMember) {
+            <app-participant-context-menu [participantName]="contextMember.username" [x]="menuState.x" [y]="menuState.y"
+              [audioPreference]="participantAudioPreference(contextMember.id)"
+              [hasCamera]="!!cameraForMember(contextMember.id, menuState.channelID)"
+              [hasScreenShare]="!!screenShareForMember(contextMember.id, menuState.channelID)"
+              [cameraActive]="isWatchingMemberMedia(contextMember.id, menuState.channelID, 'camera')"
+              [screenShareActive]="isWatchingMemberMedia(contextMember.id, menuState.channelID, 'screen')"
+              (closed)="closeParticipantContextMenu()" (camera)="selectParticipantMedia(contextMember.id, menuState.channelID, 'camera')"
+              (screenShare)="selectParticipantMedia(contextMember.id, menuState.channelID, 'screen')"
+              (volumeChange)="setParticipantVolume(contextMember.id, $event)" (muteToggle)="toggleParticipantLocalMute(contextMember.id)" />
+          }
+        }
       } @else { <section class="sidebar-empty"><div class="empty-icon">⌘</div><h2>Your servers</h2><p>Select a server on the left or create a new one.</p></section> }
       @if (voiceChannel()) {
         <div class="voice-controls">

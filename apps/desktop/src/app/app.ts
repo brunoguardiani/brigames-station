@@ -4,13 +4,15 @@ import { LocalAudioTrack, Room, RoomEvent, Track } from 'livekit-client';
 import type { AudioCaptureOptions } from 'livekit-client';
 import { deriveCallMiniPreviewModel, type CallMediaDescriptor } from './call-mini-preview-state';
 import { ParticipantAudioService, type ParticipantAudioPreference } from './participant-audio.service';
+import { ParticipantContextMenuComponent } from './participant-context-menu.component';
+import { clearSelectedMediaWhenUnavailable, selectedMediaSourceForParticipant, type ParticipantContextMenuState, type SelectedMediaSource, type SelectedParticipantMedia } from './participant-context-menu-state';
 import { MicProcessor, createMicWorkletNode, decibelsToLinearGain } from './rnnoise/mic-processor';
 
 type BackendState = 'checking' | 'available' | 'unavailable';
 type User = { id: number; username: string; email: string; role: string; avatar_id: string | null };
 
 @Component({
-  selector: 'app-root', changeDetection: ChangeDetectionStrategy.OnPush, imports: [FormsModule], templateUrl: './app.html', styleUrl: './app.css',
+  selector: 'app-root', changeDetection: ChangeDetectionStrategy.OnPush, imports: [FormsModule, ParticipantContextMenuComponent], templateUrl: './app.html', styleUrl: './app.css',
 })
 export class AppComponent implements OnInit, OnDestroy {
   private readonly renderer = inject(Renderer2);
@@ -73,7 +75,12 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly inputDeviceId = signal<string | null>(null);
   protected readonly outputDeviceId = signal<string | null>(null);
   protected readonly outputVolume = signal(1);
+  protected readonly participantContextMenu = signal<ParticipantContextMenuState | null>(null);
   protected readonly participantAudioMenuUserID = signal<number | null>(null);
+  protected readonly participantContextMember = computed(() => {
+    const state = this.participantContextMenu();
+    return state ? this.members().find((member) => member.id === state.participantID && member.voice_channel_id === state.channelID) ?? null : null;
+  });
   protected readonly participantAudioRevision = signal(0);
   protected readonly inputDevices = signal<MediaDeviceInfo[]>([]);
   protected readonly outputDevices = signal<MediaDeviceInfo[]>([]);
@@ -87,6 +94,7 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly voiceReconnecting = signal(false);
   protected readonly availablePeerMedia = signal<PeerMediaAvailability[]>([]);
   protected readonly featuredPeerMediaID = signal<string | null>(null);
+  protected readonly selectedMedia = signal<SelectedParticipantMedia | null>(null);
   protected readonly miniCallPreview = computed(() => {
     this.peerMediaRevision();
     const media: CallMediaDescriptor[] = this.peerMediaElements.map((item) => ({
@@ -196,6 +204,7 @@ export class AppComponent implements OnInit, OnDestroy {
         else this.removePeerMediaForUser(presence.user_id, voiceChannel.id);
       }
       if (this.selectedServer()?.id !== presence.server_id) return;
+      if (this.participantContextMenu()?.participantID === presence.user_id && presence.channel_id !== this.participantContextMenu()?.channelID) this.closeParticipantContextMenu();
       this.members.update((members) => members.map((member) => member.id === presence.user_id ? { ...member, voice_channel_id: presence.channel_id } : member));
     });
     this.removeRealtimeProfileListener = window.desktop.realtime.onProfileUpdated((profile) => {
@@ -251,7 +260,6 @@ export class AppComponent implements OnInit, OnDestroy {
     document.querySelectorAll<HTMLDetailsElement>('details.create-server[open], details.join-server[open], details.actions[open]').forEach((details) => {
       if (details !== containingDetails) details.open = false;
     });
-    if (!target.closest('.participant-audio-popover, .participant-audio-trigger')) this.participantAudioMenuUserID.set(null);
   }
   protected async login(): Promise<void> {
     this.loading.set(true); this.error.set('');
@@ -286,11 +294,11 @@ export class AppComponent implements OnInit, OnDestroy {
     finally { this.loading.set(false); }
   }
   protected async selectServer(server: Server): Promise<void> {
-    this.error.set(''); this.voiceMediaVisible.set(false); this.selectedServer.set(server); this.selectedChannel.set(null); this.messages.set([]); this.channels.set([]); this.members.set([]);
+    this.closeParticipantContextMenu(); this.error.set(''); this.voiceMediaVisible.set(false); this.selectedServer.set(server); this.selectedChannel.set(null); this.messages.set([]); this.channels.set([]); this.members.set([]);
     try { const [channels, members] = await Promise.all([window.desktop.channels.list(server.id), window.desktop.servers.listMembers(server.id)]); this.channels.set(channels); this.members.set(members); }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to load channels.')); }
   }
-  protected async selectChannel(channel: Channel): Promise<void> { if (channel.type !== 'text') return; this.voiceMediaVisible.set(false); this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
+  protected async selectChannel(channel: Channel): Promise<void> { if (channel.type !== 'text') return; this.closeParticipantContextMenu(); this.voiceMediaVisible.set(false); this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
   protected async joinVoiceChannel(channel: Channel): Promise<void> {
     if (this.voiceChannel()?.id === channel.id) { await this.returnToVoiceCall(); return; }
     await this.leaveVoiceChannel(); this.loading.set(true); this.error.set('');
@@ -329,10 +337,7 @@ export class AppComponent implements OnInit, OnDestroy {
       });
       room.on(RoomEvent.ParticipantDisconnected, (participant) => {
         this.removeVoiceAudioForUser(participant.identity);
-        const participantAudioMenuUserID = this.participantAudioMenuUserID();
-        if (participantAudioMenuUserID !== null && String(participantAudioMenuUserID) === participant.identity) {
-          this.participantAudioMenuUserID.set(null);
-        }
+        if (this.participantContextMenu()?.participantID === Number(participant.identity)) this.closeParticipantContextMenu();
         refreshParticipants();
         if (this.voiceRoom === room) this.playVoiceSound('leave');
       });
@@ -391,7 +396,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.screenSharing.set(false);
     this.cameraEnabled.set(false);
     this.screenSharePickerOpen.set(false);
-    this.participantAudioMenuUserID.set(null);
+    this.closeParticipantContextMenu();
     this.voiceMediaVisible.set(false);
     this.removeVoiceAudio();
     this.closePeerMedia();
@@ -658,6 +663,10 @@ export class AppComponent implements OnInit, OnDestroy {
   protected isWatchingPeerMedia(media: PeerMediaAvailability): boolean {
     return this.findPeerConnection('incoming', media.userID, media.kind) !== undefined;
   }
+  protected isWatchingMemberMedia(userID: number, channelID: number, kind: PeerMediaKind): boolean {
+    const media = kind === 'screen' ? this.screenShareForMember(userID, channelID) : this.cameraForMember(userID, channelID);
+    return media ? this.isWatchingPeerMedia(media) : false;
+  }
   protected async watchPeerMedia(media: PeerMediaAvailability): Promise<void> {
     const channel = this.voiceChannel();
     if (!channel || media.channelID !== channel.id) return;
@@ -744,6 +753,7 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
     if (signal.kind === 'media.unavailable') {
+      this.selectedMedia.update((selected) => clearSelectedMediaWhenUnavailable(selected, signal.from_user_id, kind));
       this.availablePeerMedia.update((items) => items.filter((item) => item.channelID !== signal.channel_id || item.userID !== signal.from_user_id || item.kind !== kind));
       this.desiredPeerMedia.delete(peerMediaKey(signal.from_user_id, kind));
       this.peerMediaRetryCounts.delete(peerMediaKey(signal.from_user_id, kind));
@@ -1053,6 +1063,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.peerMediaAudioElements.clear();
     this.availablePeerMedia.set([]);
     this.featuredPeerMediaID.set(null);
+    this.selectedMedia.set(null);
     this.voiceMediaActive.set(false);
     this.peerMediaRevision.update((revision) => revision + 1);
     this.updatePeerMediaLayout();
@@ -1115,6 +1126,10 @@ export class AppComponent implements OnInit, OnDestroy {
       id, element, video, label, highlightButton, previewButton, effectButton, kind,
       participantIdentity: remoteMedia ? String(remoteMedia.userID) : this.voiceRoom?.localParticipant.identity ?? String(this.currentUserID()),
     });
+    if (remoteMedia && this.selectedMedia()?.participantID === remoteMedia.userID && this.selectedMedia()?.source === kind) {
+      this.featuredPeerMediaID.set(id);
+      this.voiceMediaVisible.set(true);
+    }
     this.peerMediaRevision.update((revision) => revision + 1);
     this.voiceMediaActive.set(true);
     setTimeout(() => this.updatePeerMediaLayout(), 0);
@@ -1282,6 +1297,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   private removePeerMediaVideo(id: string): void {
     const item = this.peerMediaElements.find((candidate) => candidate.id === id);
+    if (item && id.startsWith('remote:')) this.selectedMedia.update((selected) => clearSelectedMediaWhenUnavailable(selected, Number(item.participantIdentity), item.kind));
     item?.element.remove();
     this.peerMediaElements = this.peerMediaElements.filter((candidate) => candidate.id !== id);
     if (this.featuredPeerMediaID() === id || this.peerMediaElements.length < 2) this.featuredPeerMediaID.set(null);
@@ -1332,18 +1348,35 @@ export class AppComponent implements OnInit, OnDestroy {
     this.members.update((members) => members.map((member) => member.id === userID ? { ...member, avatar_id: avatarID } : member));
     this.messages.update((messages) => messages.map((message) => message.author_id === userID ? { ...message, author_avatar_id: avatarID } : message));
   }
+  protected legacyInlineParticipantMedia(): PeerMediaAvailability | undefined { return undefined; }
   protected isSpeaking(participant: VoiceParticipant): boolean { return this.activeSpeakerIDs().includes(participant.identity); }
   protected voiceMembers(channelID: number): ServerMember[] { return this.members().filter((member) => member.voice_channel_id === channelID); }
   protected isVoiceMemberSpeaking(member: ServerMember): boolean { return this.activeSpeakerIDs().includes(String(member.id)); }
   protected isVoiceMemberMuted(member: ServerMember): boolean { return this.voiceParticipants().find((participant) => participant.identity === String(member.id))?.muted ?? false; }
   protected isCurrentVoiceMember(member: ServerMember): boolean { return member.id === this.currentUserID(); }
+  protected selectedMediaForParticipant(userID: number): SelectedMediaSource | null { return selectedMediaSourceForParticipant(this.selectedMedia(), userID); }
   protected participantAudioPreference(userID: number): ParticipantAudioPreference {
     this.participantAudioRevision();
     return this.participantAudio.getPreference(String(userID));
   }
-  protected toggleParticipantAudioMenu(userID: number): void {
-    this.participantAudioMenuUserID.update((current) => current === userID ? null : userID);
+  protected openParticipantContextMenu(event: MouseEvent | KeyboardEvent, member: ServerMember, channelID: number): void {
+    if (this.isCurrentVoiceMember(member) || this.voiceChannel()?.id !== channelID) return;
+    event.preventDefault();
+    let x: number;
+    let y: number;
+    if (event instanceof MouseEvent && event.type === 'contextmenu') {
+      x = event.clientX; y = event.clientY;
+    } else {
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+      x = rect.left + Math.min(rect.width, 32); y = rect.top + Math.min(rect.height, 24);
+    }
+    this.participantContextMenu.set({ participantID: member.id, channelID, x, y });
   }
+  protected openParticipantContextMenuFromKeyboard(event: KeyboardEvent, member: ServerMember, channelID: number): void {
+    if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') this.openParticipantContextMenu(event, member, channelID);
+  }
+  protected toggleParticipantAudioMenu(_userID: number): void { /* Replaced by the participant context menu. */ }
+  protected closeParticipantContextMenu(): void { this.participantContextMenu.set(null); }
   protected setParticipantVolume(userID: number, volumePercent: number): void {
     this.participantAudio.setVolume(String(userID), volumePercent / 100);
   }
@@ -1352,6 +1385,29 @@ export class AppComponent implements OnInit, OnDestroy {
     this.participantAudio.setMuted(String(userID), !preference.muted);
   }
   protected resetParticipantVolume(userID: number): void { this.participantAudio.reset(String(userID)); }
+  protected selectParticipantMedia(userID: number, channelID: number, kind: PeerMediaKind): void {
+    const media = kind === 'screen' ? this.screenShareForMember(userID, channelID) : this.cameraForMember(userID, channelID);
+    this.closeParticipantContextMenu();
+    if (!media) return;
+    if (this.isWatchingPeerMedia(media)) {
+      const otherKind: PeerMediaKind = kind === 'screen' ? 'camera' : 'screen';
+      const otherMedia = otherKind === 'screen' ? this.screenShareForMember(userID, channelID) : this.cameraForMember(userID, channelID);
+      if (this.selectedMedia()?.participantID === userID && this.selectedMedia()?.source === kind) {
+        this.selectedMedia.set(otherMedia && this.isWatchingPeerMedia(otherMedia) ? { participantID: userID, source: otherKind } : null);
+      }
+      void this.watchPeerMedia(media);
+      return;
+    }
+    this.selectedMedia.set({ participantID: userID, source: kind });
+    const existingID = `remote:${userID}:${kind}`;
+    if (this.peerMediaElements.some((item) => item.id === existingID)) {
+      this.featuredPeerMediaID.set(existingID);
+      this.voiceMediaVisible.set(true);
+      this.updatePeerMediaLayout();
+      return;
+    }
+    void this.watchPeerMedia(media);
+  }
   private removeVoiceAudioElement(audioID: string): void {
     const audio = this.voiceAudioElements.get(audioID);
     if (!audio) return;
