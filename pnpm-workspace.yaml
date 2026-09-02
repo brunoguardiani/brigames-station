@@ -3,10 +3,12 @@ packages:
   - "packages/*"
 allowBuilds:
   '@parcel/watcher': true
+  electron-sparkle-updater: true
   electron-winstaller: false
   esbuild: true
   lmdb: true
   msgpackr-extract: true
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - '@angular/common@22.1.2'
   - '@angular/compiler@22.1.2'

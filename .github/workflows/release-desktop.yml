@@ -102,9 +102,52 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm --filter @brigames-station/desktop run test:updater
+
+      - name: Rebuild Sparkle bridge for Electron
+        run: >-
+          pnpm --filter @brigames-station/desktop exec electron-sparkle-updater rebuild
+          --electron-version 43.4.0
+          --arch universal
+
       - run: pnpm --filter @brigames-station/desktop run dist:mac
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Validate packaged macOS applications
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_feed='https://github.com/brunoguardiani/brigames-station/releases/latest/download/appcast.xml'
+          expected_key='1/K7+eGRHMy6hPZCqQcyVcgidr9F1LGrQbFCIE4c5Vo='
+
+          test "$(find apps/desktop/release -maxdepth 2 -type d -name 'brigames-station.app' | wc -l | tr -d ' ')" -eq 2
+          while IFS= read -r application; do
+            codesign --verify --deep --strict --verbose=2 "$application"
+            codesign -dv --verbose=4 "$application"
+            plist="$application/Contents/Info.plist"
+            test "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$plist")" = "$expected_feed"
+            test "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$plist")" = "$expected_key"
+            test -d "$application/Contents/Frameworks/Sparkle.framework"
+            find "$application/Contents/Resources/app.asar.unpacked" -name 'sparkle_bridge.node' -type f | grep -q .
+            ! grep -R -F -q 'SPARKLE_ED_PUBLIC_KEY_PLACEHOLDER' "$application"
+          done < <(find apps/desktop/release -maxdepth 2 -type d -name 'brigames-station.app' | sort)
+
+          for archive in apps/desktop/release/*.zip; do
+            extract_dir="${RUNNER_TEMP}/$(basename "$archive" .zip)"
+            ditto -x -k "$archive" "$extract_dir"
+            test "$(find "$extract_dir" -maxdepth 1 -type d -name 'brigames-station.app' | wc -l | tr -d ' ')" -eq 1
+            archived_app=$(find "$extract_dir" -maxdepth 1 -type d -name 'brigames-station.app')
+            codesign --verify --deep --strict "$archived_app"
+            architectures=$(lipo -archs "$archived_app/Contents/MacOS/brigames-station")
+            case "$(basename "$archive")" in
+              *-arm64-mac.zip) test "$architectures" = 'arm64' ;;
+              *-mac.zip) test "$architectures" = 'x86_64' ;;
+              *) echo "Unexpected macOS archive: $archive" >&2; exit 1 ;;
+            esac
+          done
+          test ! -e apps/desktop/release/latest-mac.yml
+          ! find apps/desktop/release -maxdepth 1 -name '*-mac.zip.blockmap' -print | grep -q .
 
       - name: Create SHA-256 checksums
         shell: bash
@@ -122,8 +165,67 @@ jobs:
             apps/desktop/release/*.dmg.sha256
             apps/desktop/release/*.zip
             apps/desktop/release/*.zip.sha256
-            apps/desktop/release/*.zip.blockmap
-            apps/desktop/release/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Prepare isolated Sparkle archive directory
+        shell: bash
+        run: |
+          mkdir -p apps/desktop/sparkle-release
+          cp apps/desktop/release/*.zip apps/desktop/sparkle-release/
+
+      - name: Verify Sparkle signing secret is configured
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        shell: bash
+        run: test -n "$SPARKLE_ED_PRIVATE_KEY"
+
+      - name: Expose the workspace Sparkle CLI to the composite action
+        shell: bash
+        run: |
+          mkdir -p node_modules/.bin
+          ln -sf "$GITHUB_WORKSPACE/apps/desktop/node_modules/.bin/electron-sparkle-updater" \
+            node_modules/.bin/electron-sparkle-updater
+
+      - name: Generate signed Sparkle appcast
+        uses: Innei/electron-sparkle-updater/action@5b71644e65427843f67b185460cd7d02b2787857
+        with:
+          tag: v${{ needs.version.outputs.value }}
+          archive-dir: apps/desktop/sparkle-release
+          ed-private-key: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          repo: brunoguardiani/brigames-station
+          tag-prefix: v
+          fetch-delta-bases: 'false'
+          publish: 'false'
+
+      - name: Ensure the private key is absent from artifacts
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const secret = Buffer.from(process.env.SPARKLE_ED_PRIVATE_KEY || '');
+          if (secret.length === 0) throw new Error('Sparkle signing secret is missing.');
+          const roots = ['apps/desktop/release', 'apps/desktop/sparkle-release'];
+          const visit = (entry) => {
+            const stat = fs.statSync(entry);
+            if (stat.isDirectory()) {
+              for (const child of fs.readdirSync(entry)) visit(path.join(entry, child));
+            } else if (fs.readFileSync(entry).includes(secret)) {
+              throw new Error('Sparkle signing secret was found in a release artifact.');
+            }
+          };
+          for (const root of roots) visit(root);
+          NODE
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brigames-station-appcast-${{ needs.version.outputs.value }}
+          path: |
+            apps/desktop/sparkle-release/appcast.xml
+            apps/desktop/sparkle-release/*.delta
           if-no-files-found: error
           retention-days: 90
 
@@ -179,7 +281,7 @@ jobs:
           retention-days: 90
 
   release:
-    name: Publish private GitHub Release
+    name: Publish GitHub Release
     needs: [version, windows, macos, linux]
     runs-on: ubuntu-latest
 
@@ -195,27 +297,29 @@ jobs:
           set -euo pipefail
 
           test -f release-artifacts/latest.yml
-          test -f release-artifacts/latest-mac.yml
           test -f release-artifacts/latest-linux.yml
+          test -s release-artifacts/appcast.xml
 
           windows_path=$(sed -n 's/^path: //p' release-artifacts/latest.yml | head -n 1)
-          mac_path=$(sed -n 's/^path: //p' release-artifacts/latest-mac.yml | head -n 1)
           linux_path=$(sed -n 's/^path: //p' release-artifacts/latest-linux.yml | head -n 1)
 
           test -n "$windows_path" && test -f "release-artifacts/$windows_path"
-          test -n "$mac_path" && test -f "release-artifacts/$mac_path"
           test -n "$linux_path" && test -f "release-artifacts/$linux_path"
           test -f "release-artifacts/$windows_path.blockmap"
-          test -f "release-artifacts/$mac_path.blockmap"
 
-          shopt -s nullglob
-          mac_payloads=(release-artifacts/*.zip)
-          test "${#mac_payloads[@]}" -gt 0
-          for payload in "${mac_payloads[@]}"; do
-            test -f "$payload.blockmap"
+          expected_prefix="https://github.com/brunoguardiani/brigames-station/releases/download/v${{ needs.version.outputs.value }}/"
+          mac_archives=(
+            "brigames-station-${{ needs.version.outputs.value }}-mac.zip"
+            "brigames-station-${{ needs.version.outputs.value }}-arm64-mac.zip"
+          )
+          for archive in "${mac_archives[@]}"; do
+            test -f "release-artifacts/$archive"
+            grep -F -q "url=\"${expected_prefix}${archive}\"" release-artifacts/appcast.xml
           done
+          test "$(grep -o 'sparkle:edSignature=' release-artifacts/appcast.xml | wc -l | tr -d ' ')" -ge 2
+          ! grep -R -F -q 'SPARKLE_ED_PUBLIC_KEY_PLACEHOLDER' release-artifacts
 
-      - name: Create private GitHub release
+      - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -245,6 +349,12 @@ jobs:
             echo "$release_body"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test anonymous Sparkle feed
+        run: |
+          curl --fail --location --silent --show-error \
+            https://github.com/brunoguardiani/brigames-station/releases/latest/download/appcast.xml \
+            >/dev/null
 
       - name: Send release notification to Discord
         env:

@@ -3,8 +3,8 @@ import { existsSync, promises as fs, readFileSync, writeFileSync } from 'node:fs
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ElectronAutoUpdaterAdapter } from './updater/electron-updater-adapter';
 import { registerDesktopUpdaterIPC } from './updater/updater.ipc';
+import { createUpdaterAdapter } from './updater/updater-adapter.factory';
 import { DesktopUpdaterService } from './updater/updater.service';
 import { DESKTOP_UPDATER_CHANNELS } from './updater/updater.types';
 
@@ -74,6 +74,7 @@ let selectedDisplaySourceID: string | undefined;
 let primaryWindow: BrowserWindow | undefined;
 let selectedDisplaySource: Electron.DesktopCapturerSource | undefined;
 let cachedDisplaySources: Electron.DesktopCapturerSource[] = [];
+let desktopUpdater: DesktopUpdaterService | undefined;
 
 function desktopAssetPath(filename: string): string {
   const candidates = [
@@ -647,8 +648,11 @@ ipcMain.handle('invites:join', (_event, code: unknown): Promise<{ server_id: num
 app
   .whenReady()
   .then(async () => {
-    const desktopUpdater = new DesktopUpdaterService({
-      adapter: new ElectronAutoUpdaterAdapter(),
+    const adapter = await createUpdaterAdapter({
+      currentVersion: app.getVersion(),
+    });
+    desktopUpdater = new DesktopUpdaterService({
+      adapter,
       isPackaged: app.isPackaged,
       currentVersion: app.getVersion(),
       publishStatus: (status) => {
@@ -689,4 +693,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  desktopUpdater?.stop();
 });

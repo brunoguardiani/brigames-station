@@ -1,6 +1,6 @@
 {
   "name": "@brigames-station/desktop",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "private": true,
   "description": "brigames-station desktop application.",
   "author": {
@@ -16,15 +16,15 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "build": "ng build && tsc -p electron/tsconfig.json",
-    "test:updater": "tsc -p electron/tsconfig.test.json && node --test out/updater-tests/updater/updater.service.test.js",
+    "test:updater": "tsc -p electron/tsconfig.test.json && node --test out/updater-tests/updater/updater.service.test.js out/updater-tests/updater/sparkle-updater-adapter.test.js out/updater-tests/updater/updater-adapter.factory.test.js",
     "test:call-preview": "tsc -p tsconfig.call-preview-test.json && node --test out/call-preview-tests/tests/call-mini-preview-state.test.js out/call-preview-tests/tests/participant-audio.service.test.js out/call-preview-tests/tests/participant-context-menu-state.test.js",
     "test": "pnpm run test:updater && pnpm run test:call-preview",
     "serve": "ng serve --host 127.0.0.1 --port 4200",
     "electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js",
-    "dist:win": "pnpm run build && electron-builder --win nsis --x64 --publish never",
+    "dist:win": "pnpm run build && electron-builder --config electron-builder.config.js --win nsis --x64 --publish never",
     "prepare:mac-icon": "sh scripts/create-macos-icon.sh",
-    "dist:mac": "pnpm run build && pnpm run prepare:mac-icon && electron-builder --mac dmg zip --x64 --arm64 --publish never",
-    "dist:linux": "pnpm run build && electron-builder --linux AppImage deb --x64 --publish never"
+    "dist:mac": "pnpm run build && pnpm run prepare:mac-icon && electron-builder --config electron-builder.config.js --mac dmg zip --x64 --arm64 --publish never && node scripts/cleanup-macos-update-metadata.cjs",
+    "dist:linux": "pnpm run build && electron-builder --config electron-builder.config.js --linux AppImage deb --x64 --publish never"
   },
   "dependencies": {
     "@angular/common": "22.1.2",
@@ -34,6 +34,7 @@
     "@angular/platform-browser": "22.1.2",
     "@jitsi/rnnoise-wasm": "^0.2.1",
     "@livekit/throws-transformer": "0.1.8",
+    "electron-sparkle-updater": "0.3.0",
     "electron-updater": "6.8.9",
     "livekit-client": "2.21.0",
     "rxjs": "^7.8.2",
@@ -49,97 +50,5 @@
     "electron": "43.4.0",
     "electron-builder": "26.15.6",
     "typescript": "^6.0.3"
-  },
-  "build": {
-    "appId": "com.brigames-station.desktop",
-    "productName": "brigames-station",
-    "executableName": "brigames-station",
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "brunoguardiani",
-        "repo": "brigames-station"
-      }
-    ],
-    "directories": {
-      "buildResources": "build",
-      "output": "release"
-    },
-    "files": [
-      "dist/**",
-      "dist-electron/**",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "src/assets",
-        "to": "assets"
-      }
-    ],
-    "asar": true,
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "src/assets/brigames-station-icon.png",
-      "artifactName": "brigames-station-Setup-${version}.${ext}",
-      "signExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    },
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "icon": "build/brigames-station.icns",
-      "category": "public.app-category.social-networking",
-      "extendInfo": {
-        "NSMicrophoneUsageDescription": "O brigames-station usa o microfone para canais de voz.",
-        "NSCameraUsageDescription": "O brigames-station usa a câmera quando você decide compartilhá-la em um canal de voz."
-      }
-    },
-    "linux": {
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "src/assets/brigames-station-icon.png",
-      "category": "Network;Chat;InstantMessaging",
-      "maintainer": "Bruno Guardiani <brunodipaolo12@gmail.com>",
-      "syncDesktopName": true,
-      "artifactName": "brigames-station-${version}-${arch}.${ext}"
-    }
   }
 }
