@@ -192,7 +192,7 @@ jobs:
           ed-private-key: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
           repo: brunoguardiani/brigames-station
           tag-prefix: v
-          fetch-delta-bases: 'false'
+          fetch-delta-bases: 'true'
           publish: 'false'
 
       - name: Ensure the private key is absent from artifacts
