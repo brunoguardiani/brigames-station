@@ -561,7 +561,7 @@ ipcMain.handle('auth:current-session', async (): Promise<User | null> => {
   }
 });
 ipcMain.handle('auth:update-avatar', (_event, avatarID: unknown): Promise<User> => {
-  if (avatarID !== null && (typeof avatarID !== 'string' || !/^icon_(0[1-9]|1[0-5])$/.test(avatarID))) throw new Error('Invalid avatar.');
+  if (avatarID !== null && (typeof avatarID !== 'string' || !/^icon_(0[1-9]|[1-9][0-9]{1,2})$/.test(avatarID))) throw new Error('Invalid avatar.');
   return authenticatedRequest<User>('/me/avatar', 'PATCH', { avatar_id: avatarID as string | null });
 });
 ipcMain.handle('auth:logout', async (): Promise<void> => {
