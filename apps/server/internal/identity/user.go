@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var avatarIDPattern = regexp.MustCompile(`^icon_(0[1-9]|1[0-5])$`)
+var avatarIDPattern = regexp.MustCompile(`^icon_(0[1-9]|[1-9][0-9]{1,2})$`)
 
 func (service *Service) CurrentUser(ctx context.Context, userID int64) (User, error) {
 	var user User

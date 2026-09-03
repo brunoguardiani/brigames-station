@@ -66,7 +66,7 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly settingsOpen = signal(false);
   protected readonly avatarSaving = signal(false);
   protected readonly selectedAvatarID = signal<string | null>(null);
-  protected readonly availableAvatars = Array.from({ length: 15 }, (_, index) => `icon_${String(index + 1).padStart(2, '0')}`);
+  protected readonly availableAvatars = Array.from({ length: 17 }, (_, index) => `icon_${String(index + 1).padStart(2, '0')}`);
   protected readonly hardwareAcceleration = signal(true);
   protected readonly hardwareAccelerationRestartRequired = signal(false);
   protected readonly appVersion = signal('');
