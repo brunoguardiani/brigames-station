@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, nativeImage, safeStorage } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, nativeImage, safeStorage, shell } from 'electron';
 import { existsSync, promises as fs, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -443,6 +443,13 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
   });
   window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
     callback((permission === 'media' || permission === 'display-capture') && isTrustedRendererURL(webContents.getURL()));
+  });
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!isTrustedRendererURL(url)) event.preventDefault();
   });
   window.webContents.on('console-message', (event) => {
     if (event.message.startsWith('[webrtc]')) console.info(`[renderer] ${event.message}`);
