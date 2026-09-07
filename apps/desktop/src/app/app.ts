@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, OnDestroy, OnInit, Renderer2, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { LocalAudioTrack, Room, RoomEvent, Track } from 'livekit-client';
+import { AudioPresets, LocalAudioTrack, Room, RoomEvent, Track } from 'livekit-client';
 import type { AudioCaptureOptions } from 'livekit-client';
 import { deriveCallMiniPreviewModel, type CallMediaDescriptor } from './call-mini-preview-state';
 import { ParticipantAudioService, type ParticipantAudioPreference } from './participant-audio.service';
@@ -307,7 +307,13 @@ export class AppComponent implements OnInit, OnDestroy {
     this.messages.set([]);
     try {
       const session = await window.desktop.voice.join(channel.id);
-      const room = new Room();
+      const room = new Room({
+        publishDefaults: {
+          audioPreset: AudioPresets.music,
+          dtx: false,
+          red: true,
+        },
+      });
       const toVoiceParticipant = (participant: { identity: string; name?: string; isMicrophoneEnabled: boolean }): VoiceParticipant => ({
         identity: participant.identity,
         name: participant.name || participant.identity,
@@ -502,6 +508,7 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const processor = new MicProcessor({ rnnoise: this.noiseFilterEnabled(), gainDecibels: this.inputVolumeDb() });
       processor.onLevel = (level) => this.micLevel.set(level);
+      processor.onRnnoiseFailed = () => console.error('[voice] rnnoise crashed in worklet; falling back to raw passthrough');
       await track.setProcessor(processor);
       this.micProcessor = processor;
       console.info('[voice] mic processor attached', JSON.stringify({ rnnoise: this.noiseFilterEnabled(), gainDb: this.inputVolumeDb() }));
@@ -517,8 +524,6 @@ export class AppComponent implements OnInit, OnDestroy {
     const processor = this.micProcessor;
     if (processor) {
       processor.setRnnoise(enabled);
-      const track = this.voiceRoom?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
-      await track?.mediaStreamTrack.applyConstraints({ echoCancellation: true, autoGainControl: true, noiseSuppression: !enabled }).catch(() => undefined);
       console.info('[voice] rnnoise', enabled ? 'enabled' : 'disabled');
     }
   }
