@@ -18,6 +18,7 @@ export class ElectronAutoUpdaterAdapter implements AutoUpdaterAdapter {
   configureAutomaticUpdates(): void {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.autoRunAppAfterInstall = true;
   }
 
   async checkForUpdates(): Promise<void> {
@@ -25,7 +26,8 @@ export class ElectronAutoUpdaterAdapter implements AutoUpdaterAdapter {
   }
 
   quitAndInstall(): void {
-    // Not silent, and explicitly launch the application again after install.
+    // Show the branded NSIS installation UI on Windows. Its finish callback
+    // reopens the app immediately after a successful visible installation.
     autoUpdater.quitAndInstall(false, true);
   }
 
