@@ -1484,7 +1484,6 @@ export class AppComponent implements OnInit, OnDestroy {
     return avatarID ? `assets/avatars/${avatarID}.png` : null;
   }
   private static readonly IMAGE_URL_PATTERN = /^https?:\/\/\S+$/i;
-  private static readonly IMAGE_PATH_PATTERN = /\.(?:png|jpe?g|gif|webp|avif)$/i;
   private static readonly EMBEDDED_URL_PATTERN = /https?:\/\/[^\s]+/g;
   private static readonly TRAILING_PUNCTUATION_PATTERN = /[.,;:!?()[\]{}<>'"]+$/;
   protected readonly failedImageMessages = signal<Set<string>>(new Set());
@@ -1493,7 +1492,8 @@ export class AppComponent implements OnInit, OnDestroy {
     const trimmed = content.trim();
     if (!AppComponent.IMAGE_URL_PATTERN.test(trimmed)) return null;
     try {
-      return AppComponent.IMAGE_PATH_PATTERN.test(new URL(trimmed).pathname) ? trimmed : null;
+      new URL(trimmed);
+      return trimmed;
     } catch {
       return null;
     }
