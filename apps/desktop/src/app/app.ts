@@ -1483,6 +1483,54 @@ export class AppComponent implements OnInit, OnDestroy {
   protected avatarURL(avatarID: string | null | undefined): string | null {
     return avatarID ? `assets/avatars/${avatarID}.png` : null;
   }
+  private static readonly IMAGE_URL_PATTERN = /^https?:\/\/\S+$/i;
+  private static readonly IMAGE_PATH_PATTERN = /\.(?:png|jpe?g|gif|webp|avif)$/i;
+  private static readonly EMBEDDED_URL_PATTERN = /https?:\/\/[^\s]+/g;
+  private static readonly TRAILING_PUNCTUATION_PATTERN = /[.,;:!?()[\]{}<>'"]+$/;
+  protected readonly failedImageMessages = signal<Set<string>>(new Set());
+  protected readonly lightboxImageURL = signal<string | null>(null);
+  protected imageURL(content: string): string | null {
+    const trimmed = content.trim();
+    if (!AppComponent.IMAGE_URL_PATTERN.test(trimmed)) return null;
+    try {
+      return AppComponent.IMAGE_PATH_PATTERN.test(new URL(trimmed).pathname) ? trimmed : null;
+    } catch {
+      return null;
+    }
+  }
+  protected messageSegments(content: string): Array<{ text: string; url: string | null }> {
+    const segments: Array<{ text: string; url: string | null }> = [];
+    let lastIndex = 0;
+    for (const match of content.matchAll(AppComponent.EMBEDDED_URL_PATTERN)) {
+      const url = match[0].replace(AppComponent.TRAILING_PUNCTUATION_PATTERN, '');
+      const index = match.index ?? 0;
+      if (index > lastIndex) segments.push({ text: content.slice(lastIndex, index), url: null });
+      if (url) segments.push({ text: url, url });
+      lastIndex = index + url.length;
+    }
+    if (lastIndex < content.length) segments.push({ text: content.slice(lastIndex), url: null });
+    return segments;
+  }
+  protected messageImage(message: Message): string | null {
+    if (this.failedImageMessages().has(String(message.id))) return null;
+    return this.imageURL(message.content);
+  }
+  protected markImageFailed(messageID: number): void {
+    this.failedImageMessages.update((ids) => new Set(ids).add(String(messageID)));
+  }
+  protected openLightbox(url: string): void {
+    this.lightboxImageURL.set(url);
+  }
+  protected closeLightbox(): void {
+    this.lightboxImageURL.set(null);
+  }
+  @HostListener('document:keydown.escape', ['$event'])
+  protected closeLightboxOnEscape(event: Event): void {
+    if (this.lightboxImageURL()) {
+      event.preventDefault();
+      this.closeLightbox();
+    }
+  }
   protected voiceParticipantAvatarID(participant: VoiceParticipant): string | null {
     const userID = Number(participant.identity);
     if (Number.isSafeInteger(userID)) {

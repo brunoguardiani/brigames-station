@@ -50,6 +50,13 @@ select{font:inherit;width:100%;border:1px solid transparent;border-radius:.5rem;
 .message-composer button{display:grid;place-items:center;width:2.375rem;height:2.375rem;padding:0;border-radius:50%;color:#fff;background:var(--accent);flex:0 0 auto}
 .message-composer button:hover{background:#8b83ff}
 .message-composer button svg{width:1.05rem;height:1.05rem}
+.message-image{display:block;max-width:min(24rem,100%);padding:0;border:0;background:none}
+.message-image img{display:block;max-width:100%;max-height:24rem;border-radius:.6rem;object-fit:contain;cursor:zoom-in}
+.message-image:hover img{filter:brightness(.94)}
+.message p a{color:#a59eff;overflow-wrap:anywhere}
+.message p a:hover{color:#bbb5ff;text-decoration:underline}
+.lightbox{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:2rem;background:#000c;cursor:zoom-out}
+.lightbox img{display:block;max-width:92vw;max-height:92vh;border-radius:.5rem;object-fit:contain;box-shadow:0 2rem 4rem #000a}
 
 /* Local preview toggle on shared media tiles. */
 .voice-media-preview-toggle{position:absolute;z-index:4;top:.55rem;right:.55rem;display:grid;place-items:center;width:1.9rem;height:1.9rem;padding:0;border-radius:.45rem;color:#d9d6ff;background:#171a22cc;opacity:0;transition:opacity .16s ease,background-color .16s ease}
