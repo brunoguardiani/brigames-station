@@ -28,6 +28,7 @@
                     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m8 22 4-4 4 4"/><path d="M12 18v4"/></svg>
                   </span>
                 }
+                @if (voiceChannel()?.id === channel.id) { <span class="voice-call-timer" title="Duração da chamada">{{ formatCallDuration(voiceCallElapsedSeconds()) }}</span> }
               </button>
               @if (voiceMembers(channel.id).length > 0) {
                 <div class="voice-participants">
@@ -150,7 +151,7 @@
                     <span [class.speaking]="isSpeaking(participant)">@if (avatarURL(voiceParticipantAvatarID(participant)); as avatar) { <img [src]="avatar" alt=""> } @else { {{ participant.name.slice(0, 1).toUpperCase() }} }</span>
                   }
                 </div>
-                <h2>{{ voiceChannel()!.name }}</h2>
+                <h2>{{ voiceChannel()!.name }} <span class="voice-call-duration">{{ formatCallDuration(voiceCallElapsedSeconds()) }}</span></h2>
                 <p>{{ voiceReconnecting() ? 'Reconectando à chamada…' : 'Chamada de voz em andamento' }}</p>
               </section>
             }

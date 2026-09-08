@@ -32,6 +32,36 @@ export class AppComponent implements OnInit, OnDestroy {
       this.peerMediaRevision();
       this.schedulePeerMediaLayout();
     });
+    effect(() => {
+      const channel = this.voiceChannel();
+      if (!channel) {
+        this.stopVoiceCallTimer();
+        return;
+      }
+      if (this.voiceCallState?.channelID === channel.id) return;
+      this.voiceCallState = { channelID: channel.id, startedAt: Date.now() };
+      this.voiceCallElapsedSeconds.set(0);
+      if (this.voiceCallTimer) clearInterval(this.voiceCallTimer);
+      this.voiceCallTimer = setInterval(() => {
+        const state = this.voiceCallState;
+        if (state) this.voiceCallElapsedSeconds.set(Math.floor((Date.now() - state.startedAt) / 1000));
+      }, 1000);
+    });
+  }
+  private stopVoiceCallTimer(): void {
+    this.voiceCallState = null;
+    this.voiceCallElapsedSeconds.set(0);
+    if (this.voiceCallTimer) {
+      clearInterval(this.voiceCallTimer);
+      this.voiceCallTimer = undefined;
+    }
+  }
+  protected formatCallDuration(totalSeconds: number): string {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
   }
   protected readonly macOS = navigator.userAgent.includes('Macintosh');
   protected readonly status = signal<BackendState>('checking');
@@ -53,6 +83,9 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly installingUpdate = signal(false);
   protected readonly leaveConfirmationOpen = signal(false);
   protected readonly voiceChannel = signal<Channel | null>(null);
+  protected readonly voiceCallElapsedSeconds = signal(0);
+  private voiceCallState: { channelID: number; startedAt: number } | null = null;
+  private voiceCallTimer?: ReturnType<typeof setInterval>;
   protected readonly voiceParticipants = signal<VoiceParticipant[]>([]);
   protected readonly activeSpeakerIDs = signal<string[]>([]);
   protected readonly microphoneMuted = signal(false);
@@ -218,6 +251,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   ngOnDestroy(): void {
     if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
+    if (this.voiceCallTimer) clearInterval(this.voiceCallTimer);
     if (this.peerMediaStatsTimer) clearInterval(this.peerMediaStatsTimer);
     this.removeSessionExpiredListener?.();
     this.removeRealtimeConnectedListener?.();
