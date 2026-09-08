@@ -35,9 +35,10 @@ select{font:inherit;width:100%;border:1px solid transparent;border-radius:.5rem;
 @container (max-width:13rem){.voice-media-stop-label{display:none}.voice-media-stop{padding:.42rem}}
 @media(prefers-reduced-motion:reduce){.voice-media-controls,.voice-media-indicator{transition:none}}
 .channel-list button .voice-watching-indicator{display:grid;place-items:center;width:1.15rem;height:1.15rem;color:#a59eff;font-size:inherit}.voice-watching-indicator svg{width:1rem;height:1rem}
-@keyframes voice-timer-rainbow{0%{color:#ff6b6b}16%{color:#ffa94d}33%{color:#ffd93d}50%{color:#6bd968}66%{color:#4dabf7}83%{color:#b197fc}100%{color:#ff6b6b}}
-.channel-list button .voice-call-timer{margin-left:auto;font-size:.68rem;font-weight:800;font-variant-numeric:tabular-nums;animation:voice-timer-rainbow 6s linear infinite}
-.voice-call-duration{font-size:.9rem;font-weight:800;font-variant-numeric:tabular-nums;animation:voice-timer-rainbow 6s linear infinite}
+@keyframes voice-timer-rainbow{from{background-position:200% 50%}to{background-position:0% 50%}}
+.channel-list button .voice-call-timer,.voice-call-duration{font-weight:800;font-variant-numeric:tabular-nums;background:linear-gradient(90deg,#ff6b6b,#ffa94d,#ffd93d,#6bd968,#4dabf7,#b197fc,#ff6b6b);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:voice-timer-rainbow 3s linear infinite}
+.channel-list button .voice-call-timer{margin-left:auto;font-size:.68rem}
+.voice-call-duration{font-size:.9rem}
 .channel-list button.voice-media-indicator{display:grid;place-items:center;width:1.35rem;height:1.35rem;padding:0;border-radius:.3rem;color:var(--subtle);background:transparent;text-align:center}.channel-list button.voice-media-indicator:hover{color:#d9d6ff;background:#ffffff12}.channel-list button.voice-media-indicator.watching{color:#7fe1a8;background:#1d4434}
 
 /* Menus anchored in the server sidebar must be able to overlay the workspace. */
