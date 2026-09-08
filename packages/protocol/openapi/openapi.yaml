@@ -398,7 +398,19 @@ paths:
             schema:
               $ref: '#/components/schemas/UpdateVoicePresenceRequest'
       responses:
-        '204': { description: Voice-channel presence updated. }
+        '200':
+          description: >-
+            Voice-channel presence updated. The body reports when the channel's
+            ongoing call started (RFC 3339 UTC), or null when the channel was
+            cleared or the call is not active.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [started_at]
+                properties:
+                  started_at: { type: [string, 'null'], format: date-time }
+        '204': { description: Voice-channel presence cleared. }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/VoiceChannelNotFound' }

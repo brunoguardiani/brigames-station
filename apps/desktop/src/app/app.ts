@@ -34,27 +34,36 @@ export class AppComponent implements OnInit, OnDestroy {
     });
     effect(() => {
       const channel = this.voiceChannel();
-      if (!channel) {
+      const startedAt = this.voiceRoomStartedAt();
+      if (!channel || startedAt === null) {
         this.stopVoiceCallTimer();
         return;
       }
-      if (this.voiceCallState?.channelID === channel.id) return;
-      this.voiceCallState = { channelID: channel.id, startedAt: Date.now() };
-      this.voiceCallElapsedSeconds.set(0);
-      if (this.voiceCallTimer) clearInterval(this.voiceCallTimer);
-      this.voiceCallTimer = setInterval(() => {
-        const state = this.voiceCallState;
-        if (state) this.voiceCallElapsedSeconds.set(Math.floor((Date.now() - state.startedAt) / 1000));
-      }, 1000);
+      this.ensureVoiceCallTimer(startedAt);
     });
   }
+  private ensureVoiceCallTimer(startedAt: number): void {
+    if (this.voiceCallStartedAtMs === startedAt && this.voiceCallTimer) return;
+    this.voiceCallStartedAtMs = startedAt;
+    this.voiceCallElapsedSeconds.set(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    if (this.voiceCallTimer) clearInterval(this.voiceCallTimer);
+    this.voiceCallTimer = setInterval(() => {
+      const current = this.voiceCallStartedAtMs;
+      if (current !== null) this.voiceCallElapsedSeconds.set(Math.max(0, Math.floor((Date.now() - current) / 1000)));
+    }, 1000);
+  }
   private stopVoiceCallTimer(): void {
-    this.voiceCallState = null;
+    this.voiceCallStartedAtMs = null;
     this.voiceCallElapsedSeconds.set(0);
     if (this.voiceCallTimer) {
       clearInterval(this.voiceCallTimer);
       this.voiceCallTimer = undefined;
     }
+  }
+  private applyVoiceCallStartedAt(startedAt: string | null | undefined): void {
+    if (!startedAt) return;
+    const parsed = Date.parse(startedAt);
+    if (Number.isFinite(parsed)) this.voiceRoomStartedAt.set(parsed);
   }
   protected formatCallDuration(totalSeconds: number): string {
     const hours = Math.floor(totalSeconds / 3600);
@@ -84,7 +93,8 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly leaveConfirmationOpen = signal(false);
   protected readonly voiceChannel = signal<Channel | null>(null);
   protected readonly voiceCallElapsedSeconds = signal(0);
-  private voiceCallState: { channelID: number; startedAt: number } | null = null;
+  protected readonly voiceRoomStartedAt = signal<number | null>(null);
+  private voiceCallStartedAtMs: number | null = null;
   private voiceCallTimer?: ReturnType<typeof setInterval>;
   protected readonly voiceParticipants = signal<VoiceParticipant[]>([]);
   protected readonly activeSpeakerIDs = signal<string[]>([]);
@@ -234,6 +244,7 @@ export class AppComponent implements OnInit, OnDestroy {
     });
     this.removeRealtimeVoicePresenceListener = window.desktop.realtime.onVoicePresenceChanged((presence) => {
       const voiceChannel = this.voiceChannel();
+      if (presence.channel_id !== null && presence.channel_id === voiceChannel?.id) this.applyVoiceCallStartedAt(presence.started_at);
       if (voiceChannel?.server_id === presence.server_id && presence.user_id !== this.currentUserID()) {
         if (presence.channel_id === voiceChannel.id) this.cancelPeerMediaRemoval(presence.user_id);
         else if (presence.channel_id === null) this.schedulePeerMediaRemoval(presence.user_id, voiceChannel.id);
@@ -414,7 +425,7 @@ export class AppComponent implements OnInit, OnDestroy {
       await this.enableMicrophone(room);
       this.voiceRoom = room;
       this.voiceChannel.set(channel);
-      await window.desktop.voice.setPresence(channel.id);
+      this.applyVoiceCallStartedAt((await window.desktop.voice.setPresence(channel.id))?.started_at ?? null);
       refreshParticipants();
       await this.queryPeerMedia(channel);
       this.playVoiceSound('join');
@@ -1045,7 +1056,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   private async restorePeerMediaAfterRealtimeReconnect(channel: Channel): Promise<void> {
     try {
-      await window.desktop.voice.setPresence(channel.id);
+      this.applyVoiceCallStartedAt((await window.desktop.voice.setPresence(channel.id))?.started_at ?? null);
       if (this.voiceChannel()?.id !== channel.id) return;
       const server = this.selectedServer();
       if (server?.id === channel.server_id) {
