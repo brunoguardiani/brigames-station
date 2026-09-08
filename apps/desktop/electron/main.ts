@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, nativeImage, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, nativeImage, powerMonitor, safeStorage, shell } from 'electron';
 import { existsSync, promises as fs, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,6 +75,7 @@ let primaryWindow: BrowserWindow | undefined;
 let selectedDisplaySource: Electron.DesktopCapturerSource | undefined;
 let cachedDisplaySources: Electron.DesktopCapturerSource[] = [];
 let desktopUpdater: DesktopUpdaterService | undefined;
+let removeUpdaterResumeListener: (() => void) | undefined;
 
 function desktopAssetPath(filename: string): string {
   const candidates = [
@@ -695,6 +696,11 @@ app
     });
     try {
       desktopUpdater.start();
+      const checkForUpdatesAfterResume = (): void => {
+        void desktopUpdater?.checkForUpdates('resume');
+      };
+      powerMonitor.on('resume', checkForUpdatesAfterResume);
+      removeUpdaterResumeListener = () => powerMonitor.removeListener('resume', checkForUpdatesAfterResume);
     } catch (error: unknown) {
       console.error('[updater] initialization failed', error instanceof Error ? error.message : String(error));
     }
@@ -717,5 +723,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  removeUpdaterResumeListener?.();
+  removeUpdaterResumeListener = undefined;
   desktopUpdater?.stop();
 });

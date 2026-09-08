@@ -37,6 +37,11 @@ module.exports = {
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
+    include: 'installer/brigames-installer.nsh',
+    installerHeader: 'installer/header.bmp',
+    installerSidebar: 'installer/sidebar.bmp',
+    uninstallerSidebar: 'installer/sidebar.bmp',
+    installerLanguages: ['pt_BR'],
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
   },

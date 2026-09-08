@@ -7,10 +7,12 @@ Windows x64 NSIS application. Development runs never contact an update feed.
 ## User flow
 
 After a packaged application starts, it waits briefly before checking for a
-newer version. Further checks are infrequent and happen in the background.
-When a release is found, the installer downloads without blocking the rest of
-the application. The renderer receives only a small typed status object through
-the preload boundary; update URLs, credentials, file paths, and provider
+newer version. It checks again every 15 minutes while remaining open and once
+immediately after the computer returns from suspension. A new release therefore
+appears and downloads without requiring an application restart. If another
+check or download is already active, the service reuses it rather than starting
+a duplicate request. The renderer receives only a small typed status object
+through the preload boundary; update URLs, credentials, file paths, and provider
 configuration never cross into Angular.
 
 Once the download is complete, the user can choose:
@@ -25,6 +27,55 @@ Download and provider failures are logged and represented as an updater state,
 but they do not terminate Electron or interrupt the current session. A typed
 manual-check IPC method is available for a future settings screen without
 exposing arbitrary IPC or feed controls.
+
+## Windows installation appearance
+
+The actual installation uses a compact borderless window, with a centered
+Brigames mascot, dark background, larger Portuguese text and a thin purple
+progress bar. The title bar, wizard buttons and separators are hidden while
+files are being replaced, after Electron has closed. The progress remains
+driven by NSIS; it is not an estimated animation in Angular.
+
+`apps/desktop/installer/update-window.nsh` supplies this custom surface over
+the existing NSIS installation page, scaled to the window's DPI. It preserves
+the real progress control and restores the standard result controls on errors,
+reboot requests or failed launch. Initial setup pages,
+uninstallation and operating-system elevation prompts retain their standard
+controls. No additional browser/runtime or updater process is required.
+
+`apps/desktop/installer/brigames-installer.nsh` extends electron-builder's
+assisted installer through `nsis.include`. It preserves the standard install
+directory, elevation, shortcut, upgrade and uninstall handling. The same
+branding is used for manual installation; updates skip the existing setup
+pages using electron-builder's `--updated` flag.
+
+Explicit **Reiniciar e atualizar** requests keep `quitAndInstall(false, true)`
+and `autoRunAppAfterInstall = true`, so Windows shows the branded installation
+window and passes `--updated --force-run`. On successful installation, the
+custom finish callback launches the app with electron-builder's existing
+`StdUtils.ExecShellAsUser` mechanism and closes the installer without requiring
+a **Concluir** click. Successful visible manual installations and updates
+without `--force-run` also open the app immediately. There is no launch checkbox
+or confirmation. Aborted installs never auto-launch; reboot-required results
+retain the native reboot choices. Failed launch requests show an explanation
+and instructions to open the app using its shortcut. Installation on ordinary application exit keeps
+the existing silent behavior and does not force the application to reopen.
+
+The committed BMP assets are independent of the ignored `build/` directory and
+are available in fresh CI checkouts. To regenerate them from the existing logo
+on Windows (System.Drawing, no additional graphics dependency):
+
+```powershell
+powershell -NoProfile -File apps/desktop/scripts/create-windows-installer-assets.ps1
+```
+
+Validate the generated NSIS artifact with `dist:win`, in addition to the updater
+tests. For a release test, exercise a manual install, an explicit update from
+an older version, a deferred update on exit, installation failure and a
+reboot-required outcome. Confirm that successful visible installations open
+the app once without showing the finish screen or a launch checkbox, while
+deferred silent updates do not force a relaunch. UI-only simulations can verify the callbacks and
+appearance, but do not replace an end-to-end update between packaged releases.
 
 ## Release assets
 
