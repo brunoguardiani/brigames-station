@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, nativeImage, powerMonitor, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, Menu, nativeImage, powerMonitor, safeStorage, shell, Tray } from 'electron';
 import { existsSync, promises as fs, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,6 +72,8 @@ let refreshInFlight: Promise<void> | undefined;
 let realtimeRefreshRequired = false;
 let selectedDisplaySourceID: string | undefined;
 let primaryWindow: BrowserWindow | undefined;
+let appTray: Tray | undefined;
+let isQuitting = false;
 let selectedDisplaySource: Electron.DesktopCapturerSource | undefined;
 let cachedDisplaySources: Electron.DesktopCapturerSource[] = [];
 let desktopUpdater: DesktopUpdaterService | undefined;
@@ -93,6 +95,27 @@ function appIconPath(): string {
 
 function splashMascotPath(): string {
   return desktopAssetPath('brigames-station-mascot.png');
+}
+
+function showPrimaryWindow(): void {
+  const window = primaryWindow;
+  if (!window || window.isDestroyed()) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+}
+
+function createAppTray(): void {
+  const icon = nativeImage.createFromPath(appIconPath()).resize({ width: 24, height: 24 });
+  appTray = new Tray(icon);
+  appTray.setToolTip('brigames-station');
+  appTray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Abrir', click: showPrimaryWindow },
+    { type: 'separator' },
+    { label: 'Sair', click: () => app.quit() },
+  ]));
+  appTray.on('click', showPrimaryWindow);
+  appTray.on('double-click', showPrimaryWindow);
 }
 
 function isTrustedRendererURL(url: string): boolean {
@@ -439,6 +462,11 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
     },
   });
   primaryWindow = window;
+  window.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    window.minimize();
+  });
   window.once('closed', () => {
     if (primaryWindow === window) primaryWindow = undefined;
   });
@@ -660,12 +688,7 @@ if (testInstance) {
 } else if (!app.requestSingleInstanceLock()) {
   app.exit(0);
 }
-app.on('second-instance', () => {
-  const window = primaryWindow;
-  if (!window || window.isDestroyed()) return;
-  if (window.isMinimized()) window.restore();
-  window.focus();
-});
+app.on('second-instance', showPrimaryWindow);
 
 app
   .whenReady()
@@ -690,10 +713,12 @@ app
     await createWindow((window) => {
       const remainingSplashMilliseconds = Math.max(0, 3_000 - (Date.now() - splashStartedAt));
       setTimeout(() => {
+        if (isQuitting || window.isDestroyed()) return;
         window.show();
         if (!splash.isDestroyed()) splash.close();
       }, remainingSplashMilliseconds);
     });
+    createAppTray();
     try {
       desktopUpdater.start();
       const checkForUpdatesAfterResume = (): void => {
@@ -708,6 +733,8 @@ app
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         await createWindow((window) => window.show());
+      } else {
+        showPrimaryWindow();
       }
     });
   })
@@ -723,7 +750,13 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
   removeUpdaterResumeListener?.();
   removeUpdaterResumeListener = undefined;
   desktopUpdater?.stop();
+});
+
+app.on('will-quit', () => {
+  appTray?.destroy();
+  appTray = undefined;
 });
