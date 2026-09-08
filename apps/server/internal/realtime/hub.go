@@ -16,6 +16,7 @@ type Hub struct {
 	mu            sync.RWMutex
 	clients       map[int64]map[*client]struct{}
 	voicePresence map[int64]VoicePresence
+	voiceCalls    map[int64]time.Time
 }
 type client struct {
 	conn *websocket.Conn
@@ -36,6 +37,7 @@ func NewHub() *Hub {
 	return &Hub{
 		clients:       make(map[int64]map[*client]struct{}),
 		voicePresence: make(map[int64]VoicePresence),
+		voiceCalls:    make(map[int64]time.Time),
 	}
 }
 func (h *Hub) Register(userID int64, conn *websocket.Conn) (bool, func() UnregisterResult) {
@@ -59,6 +61,7 @@ func (h *Hub) Register(userID int64, conn *websocket.Conn) (bool, func() Unregis
 		result := UnregisterResult{WentOffline: true}
 		if presence, ok := h.voicePresence[userID]; ok {
 			delete(h.voicePresence, userID)
+			h.reconcileVoiceCallLocked(presence.ChannelID)
 			result.VoicePresence = &presence
 		}
 		return result
@@ -72,6 +75,10 @@ func (h *Hub) SetVoicePresence(userID int64, presence VoicePresence) (*VoicePres
 		return &previous, false
 	}
 	h.voicePresence[userID] = presence
+	h.reconcileVoiceCallLocked(presence.ChannelID)
+	if exists && previous.ChannelID != presence.ChannelID {
+		h.reconcileVoiceCallLocked(previous.ChannelID)
+	}
 	if exists {
 		return &previous, true
 	}
@@ -83,6 +90,7 @@ func (h *Hub) ClearVoicePresence(userID int64) (VoicePresence, bool) {
 	presence, exists := h.voicePresence[userID]
 	if exists {
 		delete(h.voicePresence, userID)
+		h.reconcileVoiceCallLocked(presence.ChannelID)
 	}
 	return presence, exists
 }
@@ -91,6 +99,32 @@ func (h *Hub) GetVoicePresence(userID int64) (VoicePresence, bool) {
 	defer h.mu.RUnlock()
 	presence, exists := h.voicePresence[userID]
 	return presence, exists
+}
+func (h *Hub) VoiceCallStartedAt(channelID int64) (time.Time, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	startedAt, exists := h.voiceCalls[channelID]
+	return startedAt, exists
+}
+func (h *Hub) VoiceCalls() map[int64]time.Time {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	calls := make(map[int64]time.Time, len(h.voiceCalls))
+	for channelID, startedAt := range h.voiceCalls {
+		calls[channelID] = startedAt
+	}
+	return calls
+}
+func (h *Hub) reconcileVoiceCallLocked(channelID int64) {
+	for _, presence := range h.voicePresence {
+		if presence.ChannelID == channelID {
+			if _, exists := h.voiceCalls[channelID]; !exists {
+				h.voiceCalls[channelID] = time.Now().UTC()
+			}
+			return
+		}
+	}
+	delete(h.voiceCalls, channelID)
 }
 func (h *Hub) IsOnline(userID int64) bool {
 	h.mu.RLock()
