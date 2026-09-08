@@ -18,6 +18,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private readonly renderer = inject(Renderer2);
   private readonly dismissedUpdateVersion = signal<string | null>(null);
   private readonly peerMediaRevision = signal(0);
+  private peerMediaStatsTimer?: ReturnType<typeof setInterval>;
   private readonly messageList = viewChild<ElementRef<HTMLElement>>('messageList');
 
   constructor() {
@@ -217,6 +218,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   ngOnDestroy(): void {
     if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
+    if (this.peerMediaStatsTimer) clearInterval(this.peerMediaStatsTimer);
     this.removeSessionExpiredListener?.();
     this.removeRealtimeConnectedListener?.();
     this.removeRealtimeMessageListener?.();
@@ -850,6 +852,53 @@ export class AppComponent implements OnInit, OnDestroy {
     await sender.setParameters(parameters);
     console.info('[webrtc] video sender limits applied', JSON.stringify({ kind, quality: kind === 'screen' ? this.screenShareQuality() : undefined, ...limits }));
   }
+  private async restartPeerMediaIce(peer: PeerMediaConnection): Promise<void> {
+    if (this.peerConnections.get(peer.sessionID) !== peer || peer.iceRestarts >= maxPeerMediaIceRestarts) return;
+    peer.iceRestarts += 1;
+    console.info('[webrtc] ice restart', { sessionID: peer.sessionID, direction: peer.direction, remoteUserID: peer.remoteUserID, kind: peer.kind, attempt: peer.iceRestarts });
+    try {
+      const offer = await peer.connection.createOffer({ iceRestart: true });
+      await peer.connection.setLocalDescription(offer);
+      await this.sendPeerSignal(peer.remoteUserID, 'offer', { kind: peer.kind, description: serializedSessionDescription(peer.connection.localDescription) }, peer.sessionID);
+    } catch (error) {
+      console.warn('[webrtc] ice restart failed', { sessionID: peer.sessionID, error: error instanceof Error ? error.message : String(error) });
+      this.closePeerConnection(peer.sessionID);
+    }
+  }
+  private ensurePeerMediaStats(): void {
+    if (this.peerMediaStatsTimer) return;
+    this.peerMediaStatsTimer = setInterval(() => {
+      if (!this.peerConnections.size) {
+        if (this.peerMediaStatsTimer) clearInterval(this.peerMediaStatsTimer);
+        this.peerMediaStatsTimer = undefined;
+        return;
+      }
+      this.logPeerMediaStats();
+    }, peerMediaStatsIntervalMilliseconds);
+  }
+  private logPeerMediaStats(): void {
+    for (const peer of this.peerConnections.values()) {
+      void peer.connection.getStats().then((report) => {
+        const metrics: Record<string, number> = {};
+        report.forEach((stat) => {
+          if (stat.type === 'inbound-rtp' && stat.kind === 'video') {
+            const inbound = stat as RTCInboundRtpStreamStats;
+            metrics['packetsLost'] = inbound['packetsLost'] ?? 0;
+            metrics['framesDropped'] = inbound['framesDropped'] ?? 0;
+            metrics['bytesReceived'] = inbound['bytesReceived'] ?? 0;
+            metrics['jitterMs'] = Math.round((inbound['jitter'] ?? 0) * 1000);
+          }
+          if (stat.type === 'outbound-rtp' && stat.kind === 'video') {
+            const outbound = stat as RTCOutboundRtpStreamStats;
+            metrics['framesEncoded'] = outbound['framesEncoded'] ?? 0;
+            metrics['bytesSent'] = outbound['bytesSent'] ?? 0;
+            metrics['targetBitrate'] = Math.round(outbound['targetBitrate'] ?? 0);
+          }
+        });
+        console.info('[webrtc-stats]', JSON.stringify({ sessionID: peer.sessionID.slice(0, 8), state: peer.connection.connectionState, dir: peer.direction, ...metrics }));
+      }).catch(() => undefined);
+    }
+  }
   private async getPeerConnection(sessionID: string, direction: PeerDirection, remoteUserID: number, kind: PeerMediaKind): Promise<PeerMediaConnection> {
     const existing = this.peerConnections.get(sessionID);
     if (existing) {
@@ -865,8 +914,9 @@ export class AppComponent implements OnInit, OnDestroy {
     const queued = this.pendingPeerCandidates.get(sessionID);
     const pendingCandidates = queued?.remoteUserID === remoteUserID && queued.kind === kind ? queued.candidates : [];
     this.pendingPeerCandidates.delete(sessionID);
-    const peer: PeerMediaConnection = { sessionID, connection, direction, remoteUserID, kind, pendingCandidates };
+    const peer: PeerMediaConnection = { sessionID, connection, direction, remoteUserID, kind, pendingCandidates, iceRestarts: 0 };
     this.peerConnections.set(sessionID, peer);
+    this.ensurePeerMediaStats();
     console.info('[webrtc] peer connection created', { sessionID, direction, remoteUserID, kind });
     connection.onicecandidate = (event) => {
       if (event.candidate) void this.sendPeerSignal(remoteUserID, 'ice', { kind, candidate: event.candidate.toJSON() }, sessionID);
@@ -892,6 +942,8 @@ export class AppComponent implements OnInit, OnDestroy {
       }
       if (event.track.kind !== 'video') return;
       console.info('[webrtc] remote video track received', { remoteUserID, kind });
+      event.track.addEventListener('mute', () => console.info('[webrtc] remote video track muted', { remoteUserID, kind }));
+      event.track.addEventListener('unmute', () => console.info('[webrtc] remote video track unmuted', { remoteUserID, kind }));
       const name = this.members().find((member) => member.id === remoteUserID)?.username ?? `User ${remoteUserID}`;
       const mediaID = `remote:${remoteUserID}:${kind}`;
       const channel = this.voiceChannel();
@@ -907,8 +959,16 @@ export class AppComponent implements OnInit, OnDestroy {
       if (connection.connectionState === 'connected') {
         if (peer.disconnectTimer) clearTimeout(peer.disconnectTimer);
         peer.disconnectTimer = undefined;
+        if (peer.iceRestartTimer) clearTimeout(peer.iceRestartTimer);
+        peer.iceRestartTimer = undefined;
         if (peer.direction === 'incoming') this.peerMediaRetryCounts.delete(peerMediaKey(remoteUserID, kind));
       } else if (connection.connectionState === 'disconnected' && !peer.disconnectTimer) {
+        if (peer.direction === 'outgoing' && !peer.iceRestartTimer) {
+          peer.iceRestartTimer = setTimeout(() => {
+            peer.iceRestartTimer = undefined;
+            if (this.peerConnections.get(sessionID) === peer && connection.connectionState === 'disconnected') void this.restartPeerMediaIce(peer);
+          }, peerMediaIceRestartDelayMilliseconds);
+        }
         peer.disconnectTimer = setTimeout(() => {
           peer.disconnectTimer = undefined;
           const current = this.peerConnections.get(sessionID);
@@ -918,8 +978,12 @@ export class AppComponent implements OnInit, OnDestroy {
           }
         }, peerDisconnectGraceMilliseconds);
       } else if (connection.connectionState === 'failed') {
-        this.closePeerConnection(sessionID);
-        if (peer.direction === 'incoming') this.schedulePeerMediaRetry(remoteUserID, kind);
+        if (peer.direction === 'outgoing' && peer.iceRestarts < maxPeerMediaIceRestarts) {
+          void this.restartPeerMediaIce(peer);
+        } else {
+          this.closePeerConnection(sessionID);
+          if (peer.direction === 'incoming') this.schedulePeerMediaRetry(remoteUserID, kind);
+        }
       } else if (connection.connectionState === 'closed') {
         this.closePeerConnection(sessionID, false);
       }
@@ -1016,6 +1080,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.peerConnections.delete(sessionID);
     this.pendingPeerCandidates.delete(sessionID);
     if (peer.disconnectTimer) clearTimeout(peer.disconnectTimer);
+    if (peer.iceRestartTimer) clearTimeout(peer.iceRestartTimer);
     if (close) peer.connection.close();
     if (peer.direction === 'incoming' && !this.findPeerConnection('incoming', peer.remoteUserID, peer.kind)) {
       this.removePeerMediaVideo(`remote:${peer.remoteUserID}:${peer.kind}`);
@@ -1624,7 +1689,7 @@ type PeerSignalKind = 'offer' | 'answer' | 'ice' | 'media.available' | 'media.un
 type IncomingPeerSignal = { channel_id: number; from_user_id: number; kind: PeerSignalKind; session_id?: string; payload: unknown };
 type PeerMediaAvailability = { channelID: number; userID: number; name: string; kind: PeerMediaKind };
 type ParticipantAudioElement = { userID: string; element: HTMLAudioElement };
-type PeerMediaConnection = { sessionID: string; connection: RTCPeerConnection; direction: PeerDirection; remoteUserID: number; kind: PeerMediaKind; pendingCandidates: RTCIceCandidateInit[]; disconnectTimer?: ReturnType<typeof setTimeout> };
+type PeerMediaConnection = { sessionID: string; connection: RTCPeerConnection; direction: PeerDirection; remoteUserID: number; kind: PeerMediaKind; pendingCandidates: RTCIceCandidateInit[]; disconnectTimer?: ReturnType<typeof setTimeout>; iceRestartTimer?: ReturnType<typeof setTimeout>; iceRestarts: number };
 type PendingPeerCandidates = { remoteUserID: number; kind: PeerMediaKind; candidates: RTCIceCandidateInit[] };
 type PeerMediaElement = { id: string; element: HTMLElement; video: HTMLVideoElement; label: HTMLSpanElement; highlightButton: HTMLButtonElement; previewButton?: HTMLButtonElement; effectButton?: HTMLButtonElement; kind: PeerMediaKind; participantIdentity: string };
 type CameraEffectPipeline = { source: MediaStream; video: HTMLVideoElement; canvas: HTMLCanvasElement; context: CanvasRenderingContext2D; running: boolean };
@@ -1650,6 +1715,9 @@ const cameraEncodingLimits = { maxBitrate: 1_000_000, maxFramerate: 24 };
 const maxPendingPeerSessions = 32;
 const maxPendingCandidatesPerSession = 64;
 const peerDisconnectGraceMilliseconds = 10_000;
+const peerMediaIceRestartDelayMilliseconds = 3_000;
+const maxPeerMediaIceRestarts = 5;
+const peerMediaStatsIntervalMilliseconds = 15_000;
 const peerMediaRemovalGraceMilliseconds = 20_000;
 const peerMediaRetryDelayMilliseconds = 3_000;
 const maxPeerMediaRetryAttempts = 3;
