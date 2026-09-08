@@ -152,7 +152,8 @@ export class AppComponent implements OnInit, OnDestroy {
     return participants.find((participant) => this.activeSpeakerIDs().includes(participant.identity)) ?? participants[0] ?? null;
   });
   protected readonly miniCallActiveParticipantName = computed(() => this.miniCallActiveParticipant()?.name ?? 'Chamada de voz');
-  protected readonly systemAudioSupported = navigator.userAgent.includes('Windows');
+  protected readonly systemAudioSupported = navigator.userAgent.includes('Windows') || navigator.userAgent.includes('Linux');
+  protected readonly usesLoopbackSystemAudio = navigator.userAgent.includes('Linux');
   protected shareSystemAudio = true;
   protected registrationMode = false;
   protected identity = ''; protected username = ''; protected email = ''; protected password = ''; protected passwordConfirmation = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = ''; protected channelType: 'text' | 'voice' = 'text'; protected messageContent = ''; protected inviteCode = ''; protected createdInvite = '';
@@ -670,14 +671,28 @@ export class AppComponent implements OnInit, OnDestroy {
       await window.desktop.screenShare.selectSource(source.id);
       const includeAudio = this.systemAudioSupported && this.shareSystemAudio;
       const profile = screenShareQualityProfiles[this.screenShareQuality()];
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: profile.width }, height: { max: profile.height }, frameRate: { max: profile.maxFramerate } }, audio: includeAudio });
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: profile.width }, height: { max: profile.height }, frameRate: { max: profile.maxFramerate } }, audio: includeAudio && !this.usesLoopbackSystemAudio });
       stream.getVideoTracks().forEach((track) => { track.contentHint = 'motion'; });
+      if (includeAudio && this.usesLoopbackSystemAudio) await this.attachLoopbackSystemAudio(stream);
       await this.publishPeerMedia('screen', stream);
       this.screenSharing.set(true);
       this.voiceMediaVisible.set(true);
       this.screenSharePickerOpen.set(false);
     } catch (error) { this.error.set(this.messageFor(error, 'Unable to start screen sharing.')); }
     finally { this.loading.set(false); }
+  }
+  private async attachLoopbackSystemAudio(stream: MediaStream): Promise<void> {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const monitor = devices.find((device) => device.kind === 'audioinput' && device.label.startsWith('Loopback'));
+      if (!monitor) throw new Error('Loopback device not found');
+      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: monitor.deviceId }, channelCount: 2 } });
+      audioStream.getAudioTracks().forEach((track) => stream.addTrack(track));
+      console.info('[webrtc] system audio attached', JSON.stringify({ label: monitor.label }));
+    } catch (error) {
+      this.error.set('Não foi possível capturar o áudio do sistema; compartilhando apenas o vídeo.');
+      console.warn('[webrtc] unable to attach system audio', error instanceof Error ? error.message : String(error));
+    }
   }
   protected async stopScreenShare(): Promise<void> {
     if (!this.voiceRoom) return;
