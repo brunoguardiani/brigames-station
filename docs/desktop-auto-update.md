@@ -7,10 +7,12 @@ Windows x64 NSIS application. Development runs never contact an update feed.
 ## User flow
 
 After a packaged application starts, it waits briefly before checking for a
-newer version. Further checks are infrequent and happen in the background.
-When a release is found, the installer downloads without blocking the rest of
-the application. The renderer receives only a small typed status object through
-the preload boundary; update URLs, credentials, file paths, and provider
+newer version. It checks again every 15 minutes while remaining open and once
+immediately after the computer returns from suspension. A new release therefore
+appears and downloads without requiring an application restart. If another
+check or download is already active, the service reuses it rather than starting
+a duplicate request. The renderer receives only a small typed status object
+through the preload boundary; update URLs, credentials, file paths, and provider
 configuration never cross into Angular.
 
 Once the download is complete, the user can choose:

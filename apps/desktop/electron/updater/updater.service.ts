@@ -6,7 +6,7 @@ import {
 } from './updater.types';
 
 const DEFAULT_INITIAL_CHECK_DELAY_MS = 10_000;
-const DEFAULT_PERIODIC_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+const DEFAULT_PERIODIC_CHECK_INTERVAL_MS = 15 * 60 * 1_000;
 const PUBLIC_ERROR_MESSAGE = 'Nao foi possivel verificar ou baixar a atualizacao.';
 
 export interface DesktopUpdaterServiceOptions {
@@ -129,7 +129,7 @@ export class DesktopUpdaterService {
     this.started = false;
   }
 
-  checkForUpdates(source: 'automatic' | 'periodic' | 'manual' = 'manual'): Promise<DesktopUpdaterStatus> {
+  checkForUpdates(source: 'automatic' | 'periodic' | 'resume' | 'manual' = 'manual'): Promise<DesktopUpdaterStatus> {
     if (!this.started) this.start();
 
     if (!this.isPackaged) return Promise.resolve(this.getStatus());
