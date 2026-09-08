@@ -106,6 +106,15 @@ func (h *Hub) VoiceCallStartedAt(channelID int64) (time.Time, bool) {
 	startedAt, exists := h.voiceCalls[channelID]
 	return startedAt, exists
 }
+func (h *Hub) VoiceCalls() map[int64]time.Time {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	calls := make(map[int64]time.Time, len(h.voiceCalls))
+	for channelID, startedAt := range h.voiceCalls {
+		calls[channelID] = startedAt
+	}
+	return calls
+}
 func (h *Hub) reconcileVoiceCallLocked(channelID int64) {
 	for _, presence := range h.voicePresence {
 		if presence.ChannelID == channelID {

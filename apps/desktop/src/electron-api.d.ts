@@ -88,4 +88,4 @@ interface Channel {
 }
 interface Message { id: number; channel_id: number; author_id: number; author_username: string; author_avatar_id: string | null; content: string; created_at: string; }
 interface MessagePage { messages: Message[]; next_before: number | null; }
-interface ServerMember { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null; }
+interface ServerMember { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null; voice_call_started_at?: string | null; }

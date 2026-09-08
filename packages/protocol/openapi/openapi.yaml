@@ -683,6 +683,10 @@ components:
           format: int64
           minimum: 1
           description: Current in-process voice channel, or null when not connected.
+        voice_call_started_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the voice channel's ongoing call started (RFC 3339 UTC), or null when the member is not connected to an active call.
     Invite:
       type: object
       required: [id, server_id, code, expires_at]

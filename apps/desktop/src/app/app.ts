@@ -33,37 +33,58 @@ export class AppComponent implements OnInit, OnDestroy {
       this.schedulePeerMediaLayout();
     });
     effect(() => {
-      const channel = this.voiceChannel();
-      const startedAt = this.voiceRoomStartedAt();
-      if (!channel || startedAt === null) {
-        this.stopVoiceCallTimer();
-        return;
-      }
-      this.ensureVoiceCallTimer(startedAt);
+      if (this.voiceRoomTimers().size > 0) this.ensureVoiceCallTicker();
+      else this.stopVoiceCallTicker();
     });
   }
-  private ensureVoiceCallTimer(startedAt: number): void {
-    if (this.voiceCallStartedAtMs === startedAt && this.voiceCallTimer) return;
-    this.voiceCallStartedAtMs = startedAt;
-    this.voiceCallElapsedSeconds.set(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-    if (this.voiceCallTimer) clearInterval(this.voiceCallTimer);
-    this.voiceCallTimer = setInterval(() => {
-      const current = this.voiceCallStartedAtMs;
-      if (current !== null) this.voiceCallElapsedSeconds.set(Math.max(0, Math.floor((Date.now() - current) / 1000)));
-    }, 1000);
+  private ensureVoiceCallTicker(): void {
+    if (this.voiceCallTimer) return;
+    this.voiceCallTimer = setInterval(() => this.voiceCallNow.set(Date.now()), 1000);
   }
-  private stopVoiceCallTimer(): void {
-    this.voiceCallStartedAtMs = null;
-    this.voiceCallElapsedSeconds.set(0);
+  private stopVoiceCallTicker(): void {
     if (this.voiceCallTimer) {
       clearInterval(this.voiceCallTimer);
       this.voiceCallTimer = undefined;
     }
   }
-  private applyVoiceCallStartedAt(startedAt: string | null | undefined): void {
+  private applyVoiceCallStartedAt(channelID: number, startedAt: string | null | undefined): void {
     if (!startedAt) return;
     const parsed = Date.parse(startedAt);
-    if (Number.isFinite(parsed)) this.voiceRoomStartedAt.set(parsed);
+    if (!Number.isFinite(parsed)) return;
+    this.voiceRoomTimers.update((timers) => {
+      if (timers.get(channelID) === parsed) return timers;
+      const next = new Map(timers);
+      next.set(channelID, parsed);
+      return next;
+    });
+  }
+  private ingestVoiceCallTimers(items: ServerMember[]): void {
+    const occupied = new Set<number>();
+    for (const member of items) {
+      if (member.voice_channel_id !== null) {
+        occupied.add(member.voice_channel_id);
+        this.applyVoiceCallStartedAt(member.voice_channel_id, member.voice_call_started_at);
+      }
+    }
+    this.voiceRoomTimers.update((timers) => {
+      let changed = false;
+      const next = new Map(timers);
+      for (const channelID of next.keys()) {
+        if (!occupied.has(channelID)) {
+          next.delete(channelID);
+          changed = true;
+        }
+      }
+      return changed ? next : timers;
+    });
+  }
+  protected roomTimerVisible(channelID: number): boolean {
+    return this.voiceRoomTimers().has(channelID) && this.voiceMembers(channelID).length > 0;
+  }
+  protected roomTimerElapsedSeconds(channelID: number): number {
+    const startedAt = this.voiceRoomTimers().get(channelID);
+    if (startedAt === undefined) return 0;
+    return Math.max(0, Math.floor((this.voiceCallNow() - startedAt) / 1000));
   }
   protected formatCallDuration(totalSeconds: number): string {
     const hours = Math.floor(totalSeconds / 3600);
@@ -92,9 +113,8 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly installingUpdate = signal(false);
   protected readonly leaveConfirmationOpen = signal(false);
   protected readonly voiceChannel = signal<Channel | null>(null);
-  protected readonly voiceCallElapsedSeconds = signal(0);
-  protected readonly voiceRoomStartedAt = signal<number | null>(null);
-  private voiceCallStartedAtMs: number | null = null;
+  protected readonly voiceCallNow = signal(Date.now());
+  protected readonly voiceRoomTimers = signal<Map<number, number>>(new Map());
   private voiceCallTimer?: ReturnType<typeof setInterval>;
   protected readonly voiceParticipants = signal<VoiceParticipant[]>([]);
   protected readonly activeSpeakerIDs = signal<string[]>([]);
@@ -244,7 +264,7 @@ export class AppComponent implements OnInit, OnDestroy {
     });
     this.removeRealtimeVoicePresenceListener = window.desktop.realtime.onVoicePresenceChanged((presence) => {
       const voiceChannel = this.voiceChannel();
-      if (presence.channel_id !== null && presence.channel_id === voiceChannel?.id) this.applyVoiceCallStartedAt(presence.started_at);
+      if (presence.channel_id !== null) this.applyVoiceCallStartedAt(presence.channel_id, presence.started_at);
       if (voiceChannel?.server_id === presence.server_id && presence.user_id !== this.currentUserID()) {
         if (presence.channel_id === voiceChannel.id) this.cancelPeerMediaRemoval(presence.user_id);
         else if (presence.channel_id === null) this.schedulePeerMediaRemoval(presence.user_id, voiceChannel.id);
@@ -344,7 +364,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   protected async selectServer(server: Server): Promise<void> {
     this.closeParticipantContextMenu(); this.error.set(''); this.voiceMediaVisible.set(false); this.selectedServer.set(server); this.selectedChannel.set(null); this.messages.set([]); this.channels.set([]); this.members.set([]);
-    try { const [channels, members] = await Promise.all([window.desktop.channels.list(server.id), window.desktop.servers.listMembers(server.id)]); this.channels.set(channels); this.members.set(members); }
+    try { const [channels, members] = await Promise.all([window.desktop.channels.list(server.id), window.desktop.servers.listMembers(server.id)]); this.channels.set(channels); this.members.set(members); this.ingestVoiceCallTimers(members); }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to load channels.')); }
   }
   protected async selectChannel(channel: Channel): Promise<void> { if (channel.type !== 'text') return; this.closeParticipantContextMenu(); this.voiceMediaVisible.set(false); this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
@@ -425,7 +445,8 @@ export class AppComponent implements OnInit, OnDestroy {
       await this.enableMicrophone(room);
       this.voiceRoom = room;
       this.voiceChannel.set(channel);
-      this.applyVoiceCallStartedAt((await window.desktop.voice.setPresence(channel.id))?.started_at ?? null);
+      const presenceResult = await window.desktop.voice.setPresence(channel.id);
+      this.applyVoiceCallStartedAt(channel.id, presenceResult?.started_at ?? null);
       refreshParticipants();
       await this.queryPeerMedia(channel);
       this.playVoiceSound('join');
@@ -1056,7 +1077,8 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   private async restorePeerMediaAfterRealtimeReconnect(channel: Channel): Promise<void> {
     try {
-      this.applyVoiceCallStartedAt((await window.desktop.voice.setPresence(channel.id))?.started_at ?? null);
+      const presenceResult = await window.desktop.voice.setPresence(channel.id);
+      this.applyVoiceCallStartedAt(channel.id, presenceResult?.started_at ?? null);
       if (this.voiceChannel()?.id !== channel.id) return;
       const server = this.selectedServer();
       if (server?.id === channel.server_id) {
@@ -1733,7 +1755,10 @@ export class AppComponent implements OnInit, OnDestroy {
   private async refreshServerMembers(serverID: number): Promise<void> {
     try {
       const members = await window.desktop.servers.listMembers(serverID);
-      if (this.selectedServer()?.id === serverID) this.members.set(members);
+      if (this.selectedServer()?.id === serverID) {
+        this.members.set(members);
+        this.ingestVoiceCallTimers(members);
+      }
     } catch { /* The next explicit server selection will retry. */ }
   }
   private async refreshBackendStatus(): Promise<void> { try { const health = await window.desktop.backend.getHealth(); this.status.set(health.status === 'alive' ? 'available' : 'unavailable'); } catch { this.status.set('unavailable'); } }
@@ -1763,7 +1788,7 @@ const cameraEffects: Array<{ id: CameraEffectID; label: string; filter: string }
   { id: 'vintage', label: 'Vintage', filter: 'sepia(0.4) saturate(1.4) contrast(1.05) brightness(1.05)' },
   { id: 'cold', label: 'Frio', filter: 'saturate(1.3) hue-rotate(15deg) brightness(1.05) contrast(1.05)' },
 ];
-type ServerMember = { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null };
+type ServerMember = { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null; voice_call_started_at?: string | null };
 
 const peerSessionIDPattern = /^[A-Za-z0-9_-]{1,64}$/;
 type ScreenShareQuality = '720p' | '1080p';
