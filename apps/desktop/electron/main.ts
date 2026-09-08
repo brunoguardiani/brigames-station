@@ -627,7 +627,7 @@ ipcMain.handle('screen-share:list-sources', async (event): Promise<DisplaySource
       const icon = source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : undefined;
       return {
         id: source.id,
-        name: source.name,
+        name: source.name || 'Captura do sistema (Wayland)',
         thumbnail: source.thumbnail.toDataURL(),
         icon,
         kind,
@@ -651,6 +651,19 @@ ipcMain.handle('invites:create-and-copy', async (_event, serverID: unknown): Pro
   return invite;
 });
 ipcMain.handle('invites:join', (_event, code: unknown): Promise<{ server_id: number }> => { if (typeof code !== 'string' || !code) throw new Error('Invalid invite code.'); return authenticatedRequest('/invites/' + encodeURIComponent(code) + '/join', 'POST'); });
+
+const testInstance = process.env['BRIGAMES_TEST_INSTANCE'] === '1';
+if (testInstance) {
+  app.setPath('userData', path.join(app.getPath('userData'), 'test-instance'));
+} else if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+}
+app.on('second-instance', () => {
+  const window = primaryWindow;
+  if (!window || window.isDestroyed()) return;
+  if (window.isMinimized()) window.restore();
+  window.focus();
+});
 
 app
   .whenReady()
