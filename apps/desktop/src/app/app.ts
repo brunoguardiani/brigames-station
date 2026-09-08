@@ -5,6 +5,7 @@ import type { AudioCaptureOptions } from 'livekit-client';
 import { deriveCallMiniPreviewModel, type CallMediaDescriptor } from './call-mini-preview-state';
 import { ParticipantAudioService, type ParticipantAudioPreference } from './participant-audio.service';
 import { ParticipantContextMenuComponent } from './participant-context-menu.component';
+import { ScreenShareControlComponent } from './screen-share-control.component';
 import { clearSelectedMediaWhenUnavailable, selectedMediaSourceForParticipant, type ParticipantContextMenuState, type SelectedMediaSource, type SelectedParticipantMedia } from './participant-context-menu-state';
 import { MicProcessor, createMicWorkletNode, decibelsToLinearGain } from './rnnoise/mic-processor';
 
@@ -12,7 +13,7 @@ type BackendState = 'checking' | 'available' | 'unavailable';
 type User = { id: number; username: string; email: string; role: string; avatar_id: string | null };
 
 @Component({
-  selector: 'app-root', changeDetection: ChangeDetectionStrategy.OnPush, imports: [FormsModule, ParticipantContextMenuComponent], templateUrl: './app.html', styleUrl: './app.css',
+  selector: 'app-root', changeDetection: ChangeDetectionStrategy.OnPush, imports: [FormsModule, ParticipantContextMenuComponent, ScreenShareControlComponent], templateUrl: './app.html', styleUrl: './app.css',
 })
 export class AppComponent implements OnInit, OnDestroy {
   private readonly renderer = inject(Renderer2);
@@ -57,6 +58,7 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly microphoneMuted = signal(false);
   protected readonly screenSharePickerOpen = signal(false);
   protected readonly screenShareQuality = signal<ScreenShareQuality>('720p');
+  private activeScreenShareQuality: ScreenShareQuality = '720p';
   protected readonly screenShareSources = signal<ScreenShareSource[]>([]);
   protected readonly screenShareCategory = signal<ScreenShareSourceCategory>('window');
   protected readonly visibleScreenShareSources = computed(() => this.screenShareSources().filter((source) => source.category === this.screenShareCategory()));
@@ -611,10 +613,13 @@ export class AppComponent implements OnInit, OnDestroy {
     finally { this.loading.set(false); }
   }
   protected async openScreenSharePicker(): Promise<void> {
-    if (!this.voiceRoom) return;
+    const room = this.voiceRoom;
+    if (!room || this.loading()) return;
     this.loading.set(true); this.error.set('');
     try {
       const sources = await window.desktop.screenShare.listSources();
+      if (this.voiceRoom !== room) return;
+      if (this.screenSharing()) this.screenShareQuality.set(this.activeScreenShareQuality);
       this.screenShareSources.set(sources);
       this.screenShareCategory.set((['window', 'screen', 'application'] as const).find((category) => sources.some((source) => source.category === category)) ?? 'window');
       this.screenSharePickerOpen.set(true);
@@ -627,21 +632,30 @@ export class AppComponent implements OnInit, OnDestroy {
   protected selectScreenShareQuality(quality: ScreenShareQuality): void { this.screenShareQuality.set(quality); }
   protected screenShareSourceCount(category: ScreenShareSourceCategory): number { return this.screenShareSources().filter((source) => source.category === category).length; }
   protected async startScreenShare(source: ScreenShareSource): Promise<void> {
-    if (!this.voiceRoom) return;
+    const room = this.voiceRoom;
+    if (!room || this.loading() || !this.screenSharePickerOpen()) return;
     this.loading.set(true); this.error.set('');
+    let stream: MediaStream | undefined;
     try {
       console.info('[webrtc] selected display source', JSON.stringify({ kind: source.kind, name: source.name }));
       await window.desktop.screenShare.selectSource(source.id);
       const includeAudio = this.systemAudioSupported && this.shareSystemAudio;
-      const profile = screenShareQualityProfiles[this.screenShareQuality()];
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: profile.width }, height: { max: profile.height }, frameRate: { max: profile.maxFramerate } }, audio: includeAudio });
+      const quality = this.screenShareQuality();
+      const profile = screenShareQualityProfiles[quality];
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: profile.width }, height: { max: profile.height }, frameRate: { max: profile.maxFramerate } }, audio: includeAudio });
+      if (this.voiceRoom !== room || !this.screenSharePickerOpen()) return;
       stream.getVideoTracks().forEach((track) => { track.contentHint = 'motion'; });
+      this.activeScreenShareQuality = quality;
       await this.publishPeerMedia('screen', stream);
+      if (this.voiceRoom !== room || this.localPeerMedia.get('screen') !== stream) return;
       this.screenSharing.set(true);
       this.voiceMediaVisible.set(true);
       this.screenSharePickerOpen.set(false);
     } catch (error) { this.error.set(this.messageFor(error, 'Unable to start screen sharing.')); }
-    finally { this.loading.set(false); }
+    finally {
+      if (stream && this.localPeerMedia.get('screen') !== stream) stream.getTracks().forEach((track) => track.stop());
+      this.loading.set(false);
+    }
   }
   protected async stopScreenShare(): Promise<void> {
     if (!this.voiceRoom) return;
@@ -688,7 +702,12 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   private async publishPeerMedia(kind: PeerMediaKind, stream: MediaStream): Promise<void> {
     console.info('[webrtc] publishing local media', { kind, videoTracks: stream.getVideoTracks().length, audioTracks: stream.getAudioTracks().length });
-    await this.stopLocalPeerMedia(kind);
+    const previous = this.localPeerMedia.get(kind);
+    const replacingScreen = kind === 'screen' && previous !== undefined;
+    const viewers = replacingScreen ? [...this.peerConnections.values()]
+      .filter((peer) => peer.direction === 'outgoing' && peer.kind === kind)
+      .map((peer) => peer.remoteUserID) : [];
+    if (!replacingScreen) await this.stopLocalPeerMedia(kind);
     this.localPeerMedia.set(kind, stream);
     stream.getVideoTracks().forEach((track) => {
       track.addEventListener('ended', () => {
@@ -696,6 +715,13 @@ export class AppComponent implements OnInit, OnDestroy {
       }, { once: true });
     });
     this.addPeerMediaVideo(`local:${kind}`, stream, kind, this.user()?.username ?? 'You', undefined, true);
+    if (replacingScreen) {
+      // Keep availability and the viewers' selection while renegotiating video/audio with the new capture.
+      previous.getTracks().forEach((track) => track.stop());
+      await Promise.all(viewers.map((userID) => this.startPeerMediaOffer(userID, kind).catch((error) => {
+        console.warn('[webrtc] unable to switch screen for viewer', { userID, error });
+      })));
+    }
     await this.announcePeerMedia(kind, 'media.available');
   }
   private async stopLocalPeerMedia(kind: PeerMediaKind): Promise<void> {
@@ -843,12 +869,12 @@ export class AppComponent implements OnInit, OnDestroy {
   private async applyVideoSenderLimits(sender: RTCRtpSender, kind: PeerMediaKind): Promise<void> {
     const parameters = sender.getParameters();
     const limits = kind === 'screen'
-      ? { maxBitrate: screenShareQualityProfiles[this.screenShareQuality()].maxBitrate, maxFramerate: screenShareQualityProfiles[this.screenShareQuality()].maxFramerate }
+      ? { maxBitrate: screenShareQualityProfiles[this.activeScreenShareQuality].maxBitrate, maxFramerate: screenShareQualityProfiles[this.activeScreenShareQuality].maxFramerate }
       : cameraEncodingLimits;
     parameters.degradationPreference = 'balanced';
     parameters.encodings = [{ ...(parameters.encodings[0] ?? {}), ...limits }];
     await sender.setParameters(parameters);
-    console.info('[webrtc] video sender limits applied', JSON.stringify({ kind, quality: kind === 'screen' ? this.screenShareQuality() : undefined, ...limits }));
+    console.info('[webrtc] video sender limits applied', JSON.stringify({ kind, quality: kind === 'screen' ? this.activeScreenShareQuality : undefined, ...limits }));
   }
   private async getPeerConnection(sessionID: string, direction: PeerDirection, remoteUserID: number, kind: PeerMediaKind): Promise<PeerMediaConnection> {
     const existing = this.peerConnections.get(sessionID);
