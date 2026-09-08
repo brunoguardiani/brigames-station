@@ -608,10 +608,11 @@ ipcMain.handle('voice:get-webrtc-configuration', (event): { iceServers: Array<{ 
   if (!isTrustedRendererURL(event.sender.getURL())) throw new Error('Untrusted WebRTC configuration request.');
   return { iceServers: [{ urls: webRTCStunURL }] };
 });
-ipcMain.handle('voice:set-presence', (_event, channelID: unknown): Promise<void> => {
-  if (channelID !== null && (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0)) throw new Error('Invalid voice channel ID.');
-  return authenticatedRequest<void>('/voice/presence', 'PUT', { channel_id: channelID as number | null });
-});
+  ipcMain.handle('voice:set-presence', (_event, channelID: unknown): Promise<{ started_at: string | null } | null> => {
+    if (channelID !== null && (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0)) throw new Error('Invalid voice channel ID.');
+    return authenticatedRequest<{ started_at?: string | null }>('/voice/presence', 'PUT', { channel_id: channelID as number | null })
+      .then((response) => (response ? { started_at: response.started_at ?? null } : null));
+  });
 ipcMain.handle('realtime:send-webrtc-signal', (event, signal: unknown): void => {
   if (!isTrustedRendererURL(event.sender.getURL()) || !isWebRTCSignal(signal) || !realtimeSocket || realtimeSocket.readyState !== WebSocket.OPEN) throw new Error('Realtime signaling is unavailable.');
   console.info('[webrtc] signal sent to backend', { channelID: signal.channel_id, toUserID: signal.to_user_id, kind: signal.kind });

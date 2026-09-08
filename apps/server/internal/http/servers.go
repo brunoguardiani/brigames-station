@@ -75,10 +75,12 @@ func registerServerRoutes(router *gin.Engine, service *servers.Service, tokens *
 		response := make([]map[string]any, 0, len(items))
 		for _, item := range items {
 			var voiceChannelID *int64
+			var voiceCallStartedAt *string
 			if presence, present := hub.GetVoicePresence(item.ID); present && presence.ServerID == serverID {
 				voiceChannelID = &presence.ChannelID
+				voiceCallStartedAt = voiceCallStartedAtValue(hub, presence.ChannelID)
 			}
-			response = append(response, map[string]any{"id": item.ID, "username": item.Username, "role": item.Role, "avatar_id": item.AvatarID, "online": hub.IsOnline(item.ID), "voice_channel_id": voiceChannelID})
+			response = append(response, map[string]any{"id": item.ID, "username": item.Username, "role": item.Role, "avatar_id": item.AvatarID, "online": hub.IsOnline(item.ID), "voice_channel_id": voiceChannelID, "voice_call_started_at": voiceCallStartedAt})
 		}
 		context.JSON(http.StatusOK, response)
 	})

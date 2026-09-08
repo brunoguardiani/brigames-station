@@ -19,6 +19,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private readonly renderer = inject(Renderer2);
   private readonly dismissedUpdateVersion = signal<string | null>(null);
   private readonly peerMediaRevision = signal(0);
+  private peerMediaStatsTimer?: ReturnType<typeof setInterval>;
   private readonly messageList = viewChild<ElementRef<HTMLElement>>('messageList');
 
   constructor() {
@@ -32,6 +33,66 @@ export class AppComponent implements OnInit, OnDestroy {
       this.peerMediaRevision();
       this.schedulePeerMediaLayout();
     });
+    effect(() => {
+      if (this.voiceRoomTimers().size > 0) this.ensureVoiceCallTicker();
+      else this.stopVoiceCallTicker();
+    });
+  }
+  private ensureVoiceCallTicker(): void {
+    if (this.voiceCallTimer) return;
+    this.voiceCallTimer = setInterval(() => this.voiceCallNow.set(Date.now()), 1000);
+  }
+  private stopVoiceCallTicker(): void {
+    if (this.voiceCallTimer) {
+      clearInterval(this.voiceCallTimer);
+      this.voiceCallTimer = undefined;
+    }
+  }
+  private applyVoiceCallStartedAt(channelID: number, startedAt: string | null | undefined): void {
+    if (!startedAt) return;
+    const parsed = Date.parse(startedAt);
+    if (!Number.isFinite(parsed)) return;
+    this.voiceRoomTimers.update((timers) => {
+      if (timers.get(channelID) === parsed) return timers;
+      const next = new Map(timers);
+      next.set(channelID, parsed);
+      return next;
+    });
+  }
+  private ingestVoiceCallTimers(items: ServerMember[]): void {
+    const occupied = new Set<number>();
+    for (const member of items) {
+      if (member.voice_channel_id !== null) {
+        occupied.add(member.voice_channel_id);
+        this.applyVoiceCallStartedAt(member.voice_channel_id, member.voice_call_started_at);
+      }
+    }
+    this.voiceRoomTimers.update((timers) => {
+      let changed = false;
+      const next = new Map(timers);
+      for (const channelID of next.keys()) {
+        if (!occupied.has(channelID)) {
+          next.delete(channelID);
+          changed = true;
+        }
+      }
+      return changed ? next : timers;
+    });
+  }
+  protected roomTimerVisible(channelID: number): boolean {
+    return this.voiceRoomTimers().has(channelID) && this.voiceMembers(channelID).length > 0;
+  }
+  protected roomTimerElapsedSeconds(channelID: number): number {
+    const startedAt = this.voiceRoomTimers().get(channelID);
+    if (startedAt === undefined) return 0;
+    return Math.max(0, Math.floor((this.voiceCallNow() - startedAt) / 1000));
+  }
+  protected formatCallDuration(totalSeconds: number): string {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
   }
   protected readonly macOS = navigator.userAgent.includes('Macintosh');
   protected readonly status = signal<BackendState>('checking');
@@ -53,6 +114,9 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly installingUpdate = signal(false);
   protected readonly leaveConfirmationOpen = signal(false);
   protected readonly voiceChannel = signal<Channel | null>(null);
+  protected readonly voiceCallNow = signal(Date.now());
+  protected readonly voiceRoomTimers = signal<Map<number, number>>(new Map());
+  private voiceCallTimer?: ReturnType<typeof setInterval>;
   protected readonly voiceParticipants = signal<VoiceParticipant[]>([]);
   protected readonly activeSpeakerIDs = signal<string[]>([]);
   protected readonly microphoneMuted = signal(false);
@@ -120,7 +184,8 @@ export class AppComponent implements OnInit, OnDestroy {
     return participants.find((participant) => this.activeSpeakerIDs().includes(participant.identity)) ?? participants[0] ?? null;
   });
   protected readonly miniCallActiveParticipantName = computed(() => this.miniCallActiveParticipant()?.name ?? 'Chamada de voz');
-  protected readonly systemAudioSupported = navigator.userAgent.includes('Windows');
+  protected readonly systemAudioSupported = navigator.userAgent.includes('Windows') || navigator.userAgent.includes('Linux');
+  protected readonly usesLoopbackSystemAudio = navigator.userAgent.includes('Linux');
   protected shareSystemAudio = true;
   protected registrationMode = false;
   protected identity = ''; protected username = ''; protected email = ''; protected password = ''; protected passwordConfirmation = ''; protected serverName = ''; protected serverDescription = ''; protected channelName = ''; protected channelType: 'text' | 'voice' = 'text'; protected messageContent = ''; protected inviteCode = ''; protected createdInvite = '';
@@ -201,6 +266,7 @@ export class AppComponent implements OnInit, OnDestroy {
     });
     this.removeRealtimeVoicePresenceListener = window.desktop.realtime.onVoicePresenceChanged((presence) => {
       const voiceChannel = this.voiceChannel();
+      if (presence.channel_id !== null) this.applyVoiceCallStartedAt(presence.channel_id, presence.started_at);
       if (voiceChannel?.server_id === presence.server_id && presence.user_id !== this.currentUserID()) {
         if (presence.channel_id === voiceChannel.id) this.cancelPeerMediaRemoval(presence.user_id);
         else if (presence.channel_id === null) this.schedulePeerMediaRemoval(presence.user_id, voiceChannel.id);
@@ -219,6 +285,8 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   ngOnDestroy(): void {
     if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
+    if (this.voiceCallTimer) clearInterval(this.voiceCallTimer);
+    if (this.peerMediaStatsTimer) clearInterval(this.peerMediaStatsTimer);
     this.removeSessionExpiredListener?.();
     this.removeRealtimeConnectedListener?.();
     this.removeRealtimeMessageListener?.();
@@ -298,7 +366,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   protected async selectServer(server: Server): Promise<void> {
     this.closeParticipantContextMenu(); this.error.set(''); this.voiceMediaVisible.set(false); this.selectedServer.set(server); this.selectedChannel.set(null); this.messages.set([]); this.channels.set([]); this.members.set([]);
-    try { const [channels, members] = await Promise.all([window.desktop.channels.list(server.id), window.desktop.servers.listMembers(server.id)]); this.channels.set(channels); this.members.set(members); }
+    try { const [channels, members] = await Promise.all([window.desktop.channels.list(server.id), window.desktop.servers.listMembers(server.id)]); this.channels.set(channels); this.members.set(members); this.ingestVoiceCallTimers(members); }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to load channels.')); }
   }
   protected async selectChannel(channel: Channel): Promise<void> { if (channel.type !== 'text') return; this.closeParticipantContextMenu(); this.voiceMediaVisible.set(false); this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
@@ -379,7 +447,8 @@ export class AppComponent implements OnInit, OnDestroy {
       await this.enableMicrophone(room);
       this.voiceRoom = room;
       this.voiceChannel.set(channel);
-      await window.desktop.voice.setPresence(channel.id);
+      const presenceResult = await window.desktop.voice.setPresence(channel.id);
+      this.applyVoiceCallStartedAt(channel.id, presenceResult?.started_at ?? null);
       refreshParticipants();
       await this.queryPeerMedia(channel);
       this.playVoiceSound('join');
@@ -642,9 +711,11 @@ export class AppComponent implements OnInit, OnDestroy {
       const includeAudio = this.systemAudioSupported && this.shareSystemAudio;
       const quality = this.screenShareQuality();
       const profile = screenShareQualityProfiles[quality];
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: profile.width }, height: { max: profile.height }, frameRate: { max: profile.maxFramerate } }, audio: includeAudio });
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: profile.width }, height: { max: profile.height }, frameRate: { max: profile.maxFramerate } }, audio: includeAudio && !this.usesLoopbackSystemAudio });
       if (this.voiceRoom !== room || !this.screenSharePickerOpen()) return;
       stream.getVideoTracks().forEach((track) => { track.contentHint = 'motion'; });
+      if (includeAudio && this.usesLoopbackSystemAudio) await this.attachLoopbackSystemAudio(stream);
+      if (this.voiceRoom !== room || !this.screenSharePickerOpen()) return;
       this.activeScreenShareQuality = quality;
       await this.publishPeerMedia('screen', stream);
       if (this.voiceRoom !== room || this.localPeerMedia.get('screen') !== stream) return;
@@ -655,6 +726,19 @@ export class AppComponent implements OnInit, OnDestroy {
     finally {
       if (stream && this.localPeerMedia.get('screen') !== stream) stream.getTracks().forEach((track) => track.stop());
       this.loading.set(false);
+    }
+  }
+  private async attachLoopbackSystemAudio(stream: MediaStream): Promise<void> {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const monitor = devices.find((device) => device.kind === 'audioinput' && device.label.startsWith('Loopback'));
+      if (!monitor) throw new Error('Loopback device not found');
+      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: monitor.deviceId }, channelCount: 2 } });
+      audioStream.getAudioTracks().forEach((track) => stream.addTrack(track));
+      console.info('[webrtc] system audio attached', JSON.stringify({ label: monitor.label }));
+    } catch (error) {
+      this.error.set('Não foi possível capturar o áudio do sistema; compartilhando apenas o vídeo.');
+      console.warn('[webrtc] unable to attach system audio', error instanceof Error ? error.message : String(error));
     }
   }
   protected async stopScreenShare(): Promise<void> {
@@ -876,6 +960,53 @@ export class AppComponent implements OnInit, OnDestroy {
     await sender.setParameters(parameters);
     console.info('[webrtc] video sender limits applied', JSON.stringify({ kind, quality: kind === 'screen' ? this.activeScreenShareQuality : undefined, ...limits }));
   }
+  private async restartPeerMediaIce(peer: PeerMediaConnection): Promise<void> {
+    if (this.peerConnections.get(peer.sessionID) !== peer || peer.iceRestarts >= maxPeerMediaIceRestarts) return;
+    peer.iceRestarts += 1;
+    console.info('[webrtc] ice restart', { sessionID: peer.sessionID, direction: peer.direction, remoteUserID: peer.remoteUserID, kind: peer.kind, attempt: peer.iceRestarts });
+    try {
+      const offer = await peer.connection.createOffer({ iceRestart: true });
+      await peer.connection.setLocalDescription(offer);
+      await this.sendPeerSignal(peer.remoteUserID, 'offer', { kind: peer.kind, description: serializedSessionDescription(peer.connection.localDescription) }, peer.sessionID);
+    } catch (error) {
+      console.warn('[webrtc] ice restart failed', { sessionID: peer.sessionID, error: error instanceof Error ? error.message : String(error) });
+      this.closePeerConnection(peer.sessionID);
+    }
+  }
+  private ensurePeerMediaStats(): void {
+    if (this.peerMediaStatsTimer) return;
+    this.peerMediaStatsTimer = setInterval(() => {
+      if (!this.peerConnections.size) {
+        if (this.peerMediaStatsTimer) clearInterval(this.peerMediaStatsTimer);
+        this.peerMediaStatsTimer = undefined;
+        return;
+      }
+      this.logPeerMediaStats();
+    }, peerMediaStatsIntervalMilliseconds);
+  }
+  private logPeerMediaStats(): void {
+    for (const peer of this.peerConnections.values()) {
+      void peer.connection.getStats().then((report) => {
+        const metrics: Record<string, number> = {};
+        report.forEach((stat) => {
+          if (stat.type === 'inbound-rtp' && stat.kind === 'video') {
+            const inbound = stat as RTCInboundRtpStreamStats;
+            metrics['packetsLost'] = inbound['packetsLost'] ?? 0;
+            metrics['framesDropped'] = inbound['framesDropped'] ?? 0;
+            metrics['bytesReceived'] = inbound['bytesReceived'] ?? 0;
+            metrics['jitterMs'] = Math.round((inbound['jitter'] ?? 0) * 1000);
+          }
+          if (stat.type === 'outbound-rtp' && stat.kind === 'video') {
+            const outbound = stat as RTCOutboundRtpStreamStats;
+            metrics['framesEncoded'] = outbound['framesEncoded'] ?? 0;
+            metrics['bytesSent'] = outbound['bytesSent'] ?? 0;
+            metrics['targetBitrate'] = Math.round(outbound['targetBitrate'] ?? 0);
+          }
+        });
+        console.info('[webrtc-stats]', JSON.stringify({ sessionID: peer.sessionID.slice(0, 8), state: peer.connection.connectionState, dir: peer.direction, ...metrics }));
+      }).catch(() => undefined);
+    }
+  }
   private async getPeerConnection(sessionID: string, direction: PeerDirection, remoteUserID: number, kind: PeerMediaKind): Promise<PeerMediaConnection> {
     const existing = this.peerConnections.get(sessionID);
     if (existing) {
@@ -891,8 +1022,9 @@ export class AppComponent implements OnInit, OnDestroy {
     const queued = this.pendingPeerCandidates.get(sessionID);
     const pendingCandidates = queued?.remoteUserID === remoteUserID && queued.kind === kind ? queued.candidates : [];
     this.pendingPeerCandidates.delete(sessionID);
-    const peer: PeerMediaConnection = { sessionID, connection, direction, remoteUserID, kind, pendingCandidates };
+    const peer: PeerMediaConnection = { sessionID, connection, direction, remoteUserID, kind, pendingCandidates, iceRestarts: 0 };
     this.peerConnections.set(sessionID, peer);
+    this.ensurePeerMediaStats();
     console.info('[webrtc] peer connection created', { sessionID, direction, remoteUserID, kind });
     connection.onicecandidate = (event) => {
       if (event.candidate) void this.sendPeerSignal(remoteUserID, 'ice', { kind, candidate: event.candidate.toJSON() }, sessionID);
@@ -918,6 +1050,8 @@ export class AppComponent implements OnInit, OnDestroy {
       }
       if (event.track.kind !== 'video') return;
       console.info('[webrtc] remote video track received', { remoteUserID, kind });
+      event.track.addEventListener('mute', () => console.info('[webrtc] remote video track muted', { remoteUserID, kind }));
+      event.track.addEventListener('unmute', () => console.info('[webrtc] remote video track unmuted', { remoteUserID, kind }));
       const name = this.members().find((member) => member.id === remoteUserID)?.username ?? `User ${remoteUserID}`;
       const mediaID = `remote:${remoteUserID}:${kind}`;
       const channel = this.voiceChannel();
@@ -933,8 +1067,16 @@ export class AppComponent implements OnInit, OnDestroy {
       if (connection.connectionState === 'connected') {
         if (peer.disconnectTimer) clearTimeout(peer.disconnectTimer);
         peer.disconnectTimer = undefined;
+        if (peer.iceRestartTimer) clearTimeout(peer.iceRestartTimer);
+        peer.iceRestartTimer = undefined;
         if (peer.direction === 'incoming') this.peerMediaRetryCounts.delete(peerMediaKey(remoteUserID, kind));
       } else if (connection.connectionState === 'disconnected' && !peer.disconnectTimer) {
+        if (peer.direction === 'outgoing' && !peer.iceRestartTimer) {
+          peer.iceRestartTimer = setTimeout(() => {
+            peer.iceRestartTimer = undefined;
+            if (this.peerConnections.get(sessionID) === peer && connection.connectionState === 'disconnected') void this.restartPeerMediaIce(peer);
+          }, peerMediaIceRestartDelayMilliseconds);
+        }
         peer.disconnectTimer = setTimeout(() => {
           peer.disconnectTimer = undefined;
           const current = this.peerConnections.get(sessionID);
@@ -944,8 +1086,12 @@ export class AppComponent implements OnInit, OnDestroy {
           }
         }, peerDisconnectGraceMilliseconds);
       } else if (connection.connectionState === 'failed') {
-        this.closePeerConnection(sessionID);
-        if (peer.direction === 'incoming') this.schedulePeerMediaRetry(remoteUserID, kind);
+        if (peer.direction === 'outgoing' && peer.iceRestarts < maxPeerMediaIceRestarts) {
+          void this.restartPeerMediaIce(peer);
+        } else {
+          this.closePeerConnection(sessionID);
+          if (peer.direction === 'incoming') this.schedulePeerMediaRetry(remoteUserID, kind);
+        }
       } else if (connection.connectionState === 'closed') {
         this.closePeerConnection(sessionID, false);
       }
@@ -958,7 +1104,8 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   private async restorePeerMediaAfterRealtimeReconnect(channel: Channel): Promise<void> {
     try {
-      await window.desktop.voice.setPresence(channel.id);
+      const presenceResult = await window.desktop.voice.setPresence(channel.id);
+      this.applyVoiceCallStartedAt(channel.id, presenceResult?.started_at ?? null);
       if (this.voiceChannel()?.id !== channel.id) return;
       const server = this.selectedServer();
       if (server?.id === channel.server_id) {
@@ -1042,6 +1189,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.peerConnections.delete(sessionID);
     this.pendingPeerCandidates.delete(sessionID);
     if (peer.disconnectTimer) clearTimeout(peer.disconnectTimer);
+    if (peer.iceRestartTimer) clearTimeout(peer.iceRestartTimer);
     if (close) peer.connection.close();
     if (peer.direction === 'incoming' && !this.findPeerConnection('incoming', peer.remoteUserID, peer.kind)) {
       this.removePeerMediaVideo(`remote:${peer.remoteUserID}:${peer.kind}`);
@@ -1634,7 +1782,10 @@ export class AppComponent implements OnInit, OnDestroy {
   private async refreshServerMembers(serverID: number): Promise<void> {
     try {
       const members = await window.desktop.servers.listMembers(serverID);
-      if (this.selectedServer()?.id === serverID) this.members.set(members);
+      if (this.selectedServer()?.id === serverID) {
+        this.members.set(members);
+        this.ingestVoiceCallTimers(members);
+      }
     } catch { /* The next explicit server selection will retry. */ }
   }
   private async refreshBackendStatus(): Promise<void> { try { const health = await window.desktop.backend.getHealth(); this.status.set(health.status === 'alive' ? 'available' : 'unavailable'); } catch { this.status.set('unavailable'); } }
@@ -1650,7 +1801,7 @@ type PeerSignalKind = 'offer' | 'answer' | 'ice' | 'media.available' | 'media.un
 type IncomingPeerSignal = { channel_id: number; from_user_id: number; kind: PeerSignalKind; session_id?: string; payload: unknown };
 type PeerMediaAvailability = { channelID: number; userID: number; name: string; kind: PeerMediaKind };
 type ParticipantAudioElement = { userID: string; element: HTMLAudioElement };
-type PeerMediaConnection = { sessionID: string; connection: RTCPeerConnection; direction: PeerDirection; remoteUserID: number; kind: PeerMediaKind; pendingCandidates: RTCIceCandidateInit[]; disconnectTimer?: ReturnType<typeof setTimeout> };
+type PeerMediaConnection = { sessionID: string; connection: RTCPeerConnection; direction: PeerDirection; remoteUserID: number; kind: PeerMediaKind; pendingCandidates: RTCIceCandidateInit[]; disconnectTimer?: ReturnType<typeof setTimeout>; iceRestartTimer?: ReturnType<typeof setTimeout>; iceRestarts: number };
 type PendingPeerCandidates = { remoteUserID: number; kind: PeerMediaKind; candidates: RTCIceCandidateInit[] };
 type PeerMediaElement = { id: string; element: HTMLElement; video: HTMLVideoElement; label: HTMLSpanElement; highlightButton: HTMLButtonElement; previewButton?: HTMLButtonElement; effectButton?: HTMLButtonElement; kind: PeerMediaKind; participantIdentity: string };
 type CameraEffectPipeline = { source: MediaStream; video: HTMLVideoElement; canvas: HTMLCanvasElement; context: CanvasRenderingContext2D; running: boolean };
@@ -1664,7 +1815,7 @@ const cameraEffects: Array<{ id: CameraEffectID; label: string; filter: string }
   { id: 'vintage', label: 'Vintage', filter: 'sepia(0.4) saturate(1.4) contrast(1.05) brightness(1.05)' },
   { id: 'cold', label: 'Frio', filter: 'saturate(1.3) hue-rotate(15deg) brightness(1.05) contrast(1.05)' },
 ];
-type ServerMember = { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null };
+type ServerMember = { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null; voice_call_started_at?: string | null };
 
 const peerSessionIDPattern = /^[A-Za-z0-9_-]{1,64}$/;
 type ScreenShareQuality = '720p' | '1080p';
@@ -1676,6 +1827,9 @@ const cameraEncodingLimits = { maxBitrate: 1_000_000, maxFramerate: 24 };
 const maxPendingPeerSessions = 32;
 const maxPendingCandidatesPerSession = 64;
 const peerDisconnectGraceMilliseconds = 10_000;
+const peerMediaIceRestartDelayMilliseconds = 3_000;
+const maxPeerMediaIceRestarts = 5;
+const peerMediaStatsIntervalMilliseconds = 15_000;
 const peerMediaRemovalGraceMilliseconds = 20_000;
 const peerMediaRetryDelayMilliseconds = 3_000;
 const maxPeerMediaRetryAttempts = 3;

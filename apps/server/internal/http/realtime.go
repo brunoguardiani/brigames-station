@@ -98,7 +98,7 @@ func realtimeHandler(hub *realtime.Hub, tokens *auth.TokenManager, serverService
 			if result.VoicePresence != nil {
 				memberIDs, err := serverService.MemberIDs(context.Background(), result.VoicePresence.ServerID)
 				if err == nil {
-					publishVoicePresenceChange(hub, memberIDs, result.VoicePresence.ServerID, claims.Subject, nil)
+					publishVoicePresenceChange(hub, memberIDs, result.VoicePresence.ServerID, claims.Subject, nil, nil)
 				}
 			}
 			if result.WentOffline {
