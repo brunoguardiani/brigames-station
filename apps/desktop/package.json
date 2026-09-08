@@ -1,6 +1,6 @@
 {
   "name": "@brigames-station/desktop",
-  "version": "1.1.10",
+  "version": "1.1.21",
   "private": true,
   "description": "brigames-station desktop application.",
   "author": {
@@ -21,6 +21,7 @@
     "test": "pnpm run test:updater && pnpm run test:call-preview",
     "serve": "ng serve --host 127.0.0.1 --port 4200",
     "electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js",
+    "electron:second": "tsc -p electron/tsconfig.json && BRIGAMES_TEST_INSTANCE=1 electron dist-electron/main.js",
     "dist:win": "pnpm run build && electron-builder --config electron-builder.config.js --win nsis --x64 --publish never",
     "prepare:mac-icon": "sh scripts/create-macos-icon.sh",
     "dist:mac": "pnpm run build && pnpm run prepare:mac-icon && electron-builder --config electron-builder.config.js --mac dmg:x64 dmg:arm64 zip:universal --publish never && node scripts/cleanup-macos-update-metadata.cjs",

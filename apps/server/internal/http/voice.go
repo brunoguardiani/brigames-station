@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 func registerVoiceRoutes(r *gin.Engine, s *voice.Service, t *auth.TokenManager, serverService *servers.Service, hub *realtime.Hub) {
@@ -58,7 +59,7 @@ func registerVoiceRoutes(r *gin.Engine, s *voice.Service, t *auth.TokenManager, 
 				return
 			}
 			if cleared, clearedPresence := hub.ClearVoicePresence(userID); clearedPresence {
-				publishVoicePresenceChange(hub, memberIDs, cleared.ServerID, userID, nil)
+				publishVoicePresenceChange(hub, memberIDs, cleared.ServerID, userID, nil, nil)
 			}
 			c.Status(http.StatusNoContent)
 			return
@@ -87,19 +88,30 @@ func registerVoiceRoutes(r *gin.Engine, s *voice.Service, t *auth.TokenManager, 
 		if changed {
 			if previous != nil && previous.ServerID != serverID {
 				if previousMemberIDs, listErr := serverService.MemberIDs(c.Request.Context(), previous.ServerID); listErr == nil {
-					publishVoicePresenceChange(hub, previousMemberIDs, previous.ServerID, userID, nil)
+					publishVoicePresenceChange(hub, previousMemberIDs, previous.ServerID, userID, nil, nil)
 				}
 			}
-			publishVoicePresenceChange(hub, memberIDs, serverID, userID, &channelID)
+			voiceCallStartedAt := voiceCallStartedAtValue(hub, channelID)
+			publishVoicePresenceChange(hub, memberIDs, serverID, userID, &channelID, voiceCallStartedAt)
 		}
-		c.Status(http.StatusNoContent)
+		c.JSON(http.StatusOK, gin.H{"started_at": voiceCallStartedAtValue(hub, channelID)})
 	})
 }
 
-func publishVoicePresenceChange(hub *realtime.Hub, memberIDs []int64, serverID, userID int64, channelID *int64) {
+func voiceCallStartedAtValue(hub *realtime.Hub, channelID int64) *string {
+	startedAt, exists := hub.VoiceCallStartedAt(channelID)
+	if !exists {
+		return nil
+	}
+	formatted := startedAt.Format(time.RFC3339)
+	return &formatted
+}
+
+func publishVoicePresenceChange(hub *realtime.Hub, memberIDs []int64, serverID, userID int64, channelID *int64, startedAt *string) {
 	hub.Publish(memberIDs, realtime.Event{Type: "voice.presence.changed", Data: map[string]any{
-		"server_id":  serverID,
-		"user_id":    userID,
-		"channel_id": channelID,
+		"server_id":   serverID,
+		"user_id":     userID,
+		"channel_id":  channelID,
+		"started_at":  startedAt,
 	}})
 }

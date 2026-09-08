@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, nativeImage, safeStorage } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, nativeImage, safeStorage, shell } from 'electron';
 import { existsSync, promises as fs, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -444,6 +444,13 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
   window.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
     callback((permission === 'media' || permission === 'display-capture') && isTrustedRendererURL(webContents.getURL()));
   });
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!isTrustedRendererURL(url)) event.preventDefault();
+  });
   window.webContents.on('console-message', (event) => {
     if (event.message.startsWith('[webrtc]')) console.info(`[renderer] ${event.message}`);
   });
@@ -601,10 +608,11 @@ ipcMain.handle('voice:get-webrtc-configuration', (event): { iceServers: Array<{ 
   if (!isTrustedRendererURL(event.sender.getURL())) throw new Error('Untrusted WebRTC configuration request.');
   return { iceServers: [{ urls: webRTCStunURL }] };
 });
-ipcMain.handle('voice:set-presence', (_event, channelID: unknown): Promise<void> => {
-  if (channelID !== null && (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0)) throw new Error('Invalid voice channel ID.');
-  return authenticatedRequest<void>('/voice/presence', 'PUT', { channel_id: channelID as number | null });
-});
+  ipcMain.handle('voice:set-presence', (_event, channelID: unknown): Promise<{ started_at: string | null } | null> => {
+    if (channelID !== null && (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0)) throw new Error('Invalid voice channel ID.');
+    return authenticatedRequest<{ started_at?: string | null }>('/voice/presence', 'PUT', { channel_id: channelID as number | null })
+      .then((response) => (response ? { started_at: response.started_at ?? null } : null));
+  });
 ipcMain.handle('realtime:send-webrtc-signal', (event, signal: unknown): void => {
   if (!isTrustedRendererURL(event.sender.getURL()) || !isWebRTCSignal(signal) || !realtimeSocket || realtimeSocket.readyState !== WebSocket.OPEN) throw new Error('Realtime signaling is unavailable.');
   console.info('[webrtc] signal sent to backend', { channelID: signal.channel_id, toUserID: signal.to_user_id, kind: signal.kind });
@@ -620,7 +628,7 @@ ipcMain.handle('screen-share:list-sources', async (event): Promise<DisplaySource
       const icon = source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : undefined;
       return {
         id: source.id,
-        name: source.name,
+        name: source.name || 'Captura do sistema (Wayland)',
         thumbnail: source.thumbnail.toDataURL(),
         icon,
         kind,
@@ -644,6 +652,19 @@ ipcMain.handle('invites:create-and-copy', async (_event, serverID: unknown): Pro
   return invite;
 });
 ipcMain.handle('invites:join', (_event, code: unknown): Promise<{ server_id: number }> => { if (typeof code !== 'string' || !code) throw new Error('Invalid invite code.'); return authenticatedRequest('/invites/' + encodeURIComponent(code) + '/join', 'POST'); });
+
+const testInstance = process.env['BRIGAMES_TEST_INSTANCE'] === '1';
+if (testInstance) {
+  app.setPath('userData', path.join(app.getPath('userData'), 'test-instance'));
+} else if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+}
+app.on('second-instance', () => {
+  const window = primaryWindow;
+  if (!window || window.isDestroyed()) return;
+  if (window.isMinimized()) window.restore();
+  window.focus();
+});
 
 app
   .whenReady()

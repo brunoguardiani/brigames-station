@@ -14,41 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  changes:
-    name: Detect affected areas
-    runs-on: ubuntu-latest
-    outputs:
-      desktop: ${{ steps.filter.outputs.desktop }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - id: filter
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "desktop=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          base="$BEFORE_SHA"
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            base="$BASE_SHA"
-          fi
-          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-            echo "desktop=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if git diff --quiet "$base" "$GITHUB_SHA" -- apps/desktop packages/protocol pnpm-lock.yaml pnpm-workspace.yaml package.json .github/workflows/ci.yml; then
-            echo "desktop=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "desktop=true" >> "$GITHUB_OUTPUT"
-          fi
-
   server:
     name: Go server
     runs-on: ubuntu-latest
@@ -66,9 +31,7 @@ jobs:
       - run: go build ./cmd/api ./cmd/migrate ./cmd/seed-owner
 
   desktop:
-    name: Windows installer
-    needs: changes
-    if: needs.changes.outputs.desktop == 'true'
+    name: Desktop tests
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
@@ -82,41 +45,6 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @brigames-station/desktop run test
-      - run: pnpm --filter @brigames-station/desktop run dist:win
-      - uses: actions/upload-artifact@v4
-        with:
-          name: brigames-station-windows-x64
-          path: |
-            apps/desktop/release/brigames-station-Setup-*.exe
-            !apps/desktop/release/*.__uninstaller.exe
-          if-no-files-found: error
-          retention-days: 14
-
-  desktop-linux:
-    name: Linux packages
-    needs: changes
-    if: needs.changes.outputs.desktop == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.21.0
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @brigames-station/desktop run dist:linux
-      - uses: actions/upload-artifact@v4
-        with:
-          name: brigames-station-linux-x64
-          path: |
-            apps/desktop/release/*.AppImage
-            apps/desktop/release/*.deb
-          if-no-files-found: error
-          retention-days: 14
 
   compose:
     name: Production Compose configuration
