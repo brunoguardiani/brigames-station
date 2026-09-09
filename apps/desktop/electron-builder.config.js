@@ -18,7 +18,7 @@ module.exports = {
   } : {}),
   directories: { buildResources: 'build', output: 'release' },
   files: ['dist/**', 'dist-electron/**', 'package.json', ...(sparkle?.files ?? [])],
-  extraResources: [{ from: 'src/assets', to: 'assets' }],
+  extraResources: [{ from: 'src/assets', to: 'assets', filter: ['**/*', '!df/**'] }],
   asar: true,
   afterPack: 'scripts/after-pack.cjs',
   ...(sparkle ? {

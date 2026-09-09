@@ -70,6 +70,7 @@ func registerVoiceRoutes(r *gin.Engine, s *voice.Service, t *auth.TokenManager, 
 			errorResponse(c, http.StatusBadRequest, "validation_error", "channel_id must be a positive integer or null.")
 			return
 		}
+		presence := realtime.VoicePresence{Muted: optionalBool(request, "muted"), Camera: optionalBool(request, "camera"), Screen: optionalBool(request, "screen")}
 		serverID, err := s.AuthorizeChannel(c.Request.Context(), userID, channelID)
 		if errors.Is(err, voice.ErrNotFound) {
 			errorResponse(c, http.StatusNotFound, "voice_channel_not_found", "Voice channel was not found.")
@@ -84,7 +85,9 @@ func registerVoiceRoutes(r *gin.Engine, s *voice.Service, t *auth.TokenManager, 
 			errorResponse(c, http.StatusInternalServerError, "voice_presence_failed", "Unable to update voice presence.")
 			return
 		}
-		previous, changed := hub.SetVoicePresence(userID, realtime.VoicePresence{ServerID: serverID, ChannelID: channelID})
+		presence.ServerID = serverID
+		presence.ChannelID = channelID
+		previous, changed := hub.SetVoicePresence(userID, presence)
 		if changed {
 			if previous != nil && previous.ServerID != serverID {
 				if previousMemberIDs, listErr := serverService.MemberIDs(c.Request.Context(), previous.ServerID); listErr == nil {
@@ -98,6 +101,16 @@ func registerVoiceRoutes(r *gin.Engine, s *voice.Service, t *auth.TokenManager, 
 	})
 }
 
+func optionalBool(request map[string]json.RawMessage, key string) bool {
+	raw, exists := request[key]
+	if !exists {
+		return false
+	}
+	var value bool
+	_ = json.Unmarshal(raw, &value)
+	return value
+}
+
 func voiceCallStartedAtValue(hub *realtime.Hub, channelID int64) *string {
 	startedAt, exists := hub.VoiceCallStartedAt(channelID)
 	if !exists {
@@ -108,10 +121,18 @@ func voiceCallStartedAtValue(hub *realtime.Hub, channelID int64) *string {
 }
 
 func publishVoicePresenceChange(hub *realtime.Hub, memberIDs []int64, serverID, userID int64, channelID *int64, startedAt *string) {
-	hub.Publish(memberIDs, realtime.Event{Type: "voice.presence.changed", Data: map[string]any{
+	data := map[string]any{
 		"server_id":   serverID,
 		"user_id":     userID,
 		"channel_id":  channelID,
 		"started_at":  startedAt,
-	}})
+	}
+	if channelID != nil {
+		if presence, ok := hub.GetVoicePresence(userID); ok {
+			data["muted"] = presence.Muted
+			data["camera"] = presence.Camera
+			data["screen"] = presence.Screen
+		}
+	}
+	hub.Publish(memberIDs, realtime.Event{Type: "voice.presence.changed", Data: data})
 }

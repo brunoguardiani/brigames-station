@@ -1,14 +1,17 @@
 import type { AudioProcessorOptions, Track, TrackProcessor } from 'livekit-client';
-import { RNNOISE_WASM_BASE64 } from './rnnoise-wasm';
-
 export type MicWorkletOptions = { rnnoise: boolean; gain: number };
 
-const RNNOISE_WASM_BYTES = (() => {
-  const binary = atob(RNNOISE_WASM_BASE64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-})();
+let rnnoiseBytesPromise: Promise<Uint8Array> | null = null;
+
+function loadRnnoiseBytes(): Promise<Uint8Array> {
+  rnnoiseBytesPromise ??= import('./rnnoise-wasm').then(({ RNNOISE_WASM_BASE64 }) => {
+    const binary = atob(RNNOISE_WASM_BASE64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  });
+  return rnnoiseBytesPromise;
+}
 
 const MIC_WORKLET_SOURCE = `
 class MicWorkletProcessor extends AudioWorkletProcessor {
@@ -34,6 +37,18 @@ class MicWorkletProcessor extends AudioWorkletProcessor {
     this.gateValue = 1;
     this.gateAttack = 0.632;
     this.gateRelease = 0.049;
+    const w0 = 2 * Math.PI * 80 / sampleRate;
+    const cosW0 = Math.cos(w0);
+    const alpha = Math.sin(w0) / 1.4142135623730951;
+    this.hpB0 = (1 + cosW0) / 2 / (1 + alpha);
+    this.hpB1 = -(1 + cosW0) / (1 + alpha);
+    this.hpB2 = (1 + cosW0) / 2 / (1 + alpha);
+    this.hpA1 = -2 * cosW0 / (1 + alpha);
+    this.hpA2 = (1 - alpha) / (1 + alpha);
+    this.hpX1 = 0;
+    this.hpX2 = 0;
+    this.hpY1 = 0;
+    this.hpY2 = 0;
     this.port.onmessage = (event) => {
       if (event.data && typeof event.data.rnnoise === 'boolean') this.rnnoise = event.data.rnnoise;
     };
@@ -52,9 +67,9 @@ class MicWorkletProcessor extends AudioWorkletProcessor {
       this.exports = exports;
       this.memory = exports.c;
       exports.d();
-      this.state = exports.f();
-      this.inPtr = exports.g(this.frameSize * 4);
-      this.outPtr = exports.g(this.frameSize * 4);
+      this.state = exports.h();
+      this.inPtr = exports.e(this.frameSize * 4);
+      this.outPtr = exports.e(this.frameSize * 4);
       this.inView = new Float32Array(this.memory.buffer, this.inPtr, this.frameSize);
       this.outView = new Float32Array(this.memory.buffer, this.outPtr, this.frameSize);
       this.ready = true;
@@ -62,6 +77,18 @@ class MicWorkletProcessor extends AudioWorkletProcessor {
       this.failed = true;
       console.error('[mic-processor] rnnoise failed to start', error);
     });
+  }
+  highpass(x) {
+    const y = this.hpB0 * x + this.hpB1 * this.hpX1 + this.hpB2 * this.hpX2 - this.hpA1 * this.hpY1 - this.hpA2 * this.hpY2;
+    if (!Number.isFinite(y)) {
+      this.hpX1 = this.hpX2 = this.hpY1 = this.hpY2 = 0;
+      return x;
+    }
+    this.hpX2 = this.hpX1;
+    this.hpX1 = x;
+    this.hpY2 = this.hpY1;
+    this.hpY1 = y;
+    return y;
   }
   emitLevel() {
     const rms = Math.sqrt(this.meterSum / Math.max(1, this.meterSamples));
@@ -87,7 +114,7 @@ class MicWorkletProcessor extends AudioWorkletProcessor {
   }
   bypass(input, output, gain) {
     for (let i = 0; i < output.length; i++) {
-      const sample = this.limit(input[i] * gain);
+      const sample = this.limit(this.highpass(input[i]) * gain);
       output[i] = sample;
       this.countMeter(sample);
     }
@@ -133,7 +160,7 @@ class MicWorkletProcessor extends AudioWorkletProcessor {
       let healthy = true;
       try {
         for (let i = 0; i < input.length; i++) {
-          this.inFrame[this.inFill++] = input[i];
+          this.inFrame[this.inFill++] = this.highpass(input[i]);
           if (this.inFill === this.frameSize) {
             this.processFrame(gain);
             this.inFill = 0;
@@ -178,18 +205,31 @@ function createWorkletURL(): string {
   return URL.createObjectURL(new Blob([MIC_WORKLET_SOURCE], { type: 'application/javascript' }));
 }
 
-export async function createMicWorkletNode(context: AudioContext, options: MicWorkletOptions): Promise<AudioWorkletNode> {
-  const url = createWorkletURL();
-  try {
-    await context.audioWorklet.addModule(url);
-  } finally {
-    URL.revokeObjectURL(url);
+const workletModules = new WeakMap<AudioContext, Promise<void>>();
+
+function ensureWorkletModule(context: AudioContext): Promise<void> {
+  let module = workletModules.get(context);
+  if (!module) {
+    module = (async () => {
+      const url = createWorkletURL();
+      try {
+        await context.audioWorklet.addModule(url);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    })();
+    workletModules.set(context, module);
   }
+  return module;
+}
+
+export async function createMicWorkletNode(context: AudioContext, options: MicWorkletOptions): Promise<AudioWorkletNode> {
+  const [wasmBytes] = await Promise.all([loadRnnoiseBytes(), ensureWorkletModule(context)]);
   return new AudioWorkletNode(context, 'mic-processor', {
     numberOfInputs: 1,
     numberOfOutputs: 1,
     outputChannelCount: [1],
-    processorOptions: { wasmBytes: RNNOISE_WASM_BYTES, rnnoise: options.rnnoise },
+    processorOptions: { wasmBytes, rnnoise: options.rnnoise },
   });
 }
 

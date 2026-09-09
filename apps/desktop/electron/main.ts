@@ -14,7 +14,7 @@ const webRTCStunURL = process.env['WEBRTC_STUN_URL'] ?? 'stun:stun.cloudflare.co
 const debugEnabled = process.argv.includes('--debug') || process.env['BRIGAMES_DEBUG'] === '1';
 
 type ParticipantAudioPreference = { volume: number; muted: boolean };
-type AppSettings = { hardwareAcceleration: boolean; noiseFilter: boolean; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, ParticipantAudioPreference> };
+type AppSettings = { hardwareAcceleration: boolean; noiseFilter: boolean; noiseFilterMode: 'standard' | 'advanced'; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, ParticipantAudioPreference> };
 function desktopAppVersion(): string {
   try {
     const version = (JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { version?: string }).version;
@@ -40,6 +40,7 @@ function readSettings(): AppSettings {
     return {
       hardwareAcceleration: raw.hardwareAcceleration !== false,
       noiseFilter: raw.noiseFilter !== false,
+      noiseFilterMode: raw.noiseFilterMode === 'advanced' ? 'advanced' : 'standard',
       inputVolumeDb: typeof raw.inputVolumeDb === 'number' && Number.isFinite(raw.inputVolumeDb) ? Math.min(30, Math.max(-30, raw.inputVolumeDb)) : 0,
       inputDeviceId: typeof raw.inputDeviceId === 'string' && raw.inputDeviceId ? raw.inputDeviceId : null,
       outputDeviceId: typeof raw.outputDeviceId === 'string' && raw.outputDeviceId ? raw.outputDeviceId : null,
@@ -47,7 +48,7 @@ function readSettings(): AppSettings {
       participantAudioPreferences: participantAudioPreferences(raw.participantAudioPreferences),
     };
   } catch {
-    return { hardwareAcceleration: true, noiseFilter: true, inputVolumeDb: 0, inputDeviceId: null, outputDeviceId: null, outputVolume: 1, participantAudioPreferences: {} };
+    return { hardwareAcceleration: true, noiseFilter: true, noiseFilterMode: 'standard', inputVolumeDb: 0, inputDeviceId: null, outputDeviceId: null, outputVolume: 1, participantAudioPreferences: {} };
   }
 }
 function writeSettings(settings: AppSettings): void {
@@ -148,7 +149,7 @@ type Message = { id: number; channel_id: number; author_id: number; author_usern
 type MessagePage = { messages: Message[]; next_before: number | null };
 type DisplaySourceCategory = 'window' | 'screen' | 'application';
 type DisplaySource = { id: string; name: string; thumbnail: string; icon?: string; kind: 'screen' | 'window'; category: DisplaySourceCategory };
-type VoicePresenceChanged = { server_id: number; user_id: number; channel_id: number | null };
+type VoicePresenceChanged = { server_id: number; user_id: number; channel_id: number | null; started_at?: string | null; muted?: boolean; camera?: boolean; screen?: boolean };
 type ProfileUpdated = { user_id: number; avatar_id: string | null };
 type WebRTCSignalKind = 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch';
 type WebRTCSignal = { channel_id: number; to_user_id: number; kind: WebRTCSignalKind; session_id?: string; payload: unknown };
@@ -525,6 +526,15 @@ ipcMain.handle('settings:set-noise-filter', (_event, enabled: unknown): void => 
   appSettings.noiseFilter = enabled;
   writeSettings(appSettings);
 });
+ipcMain.handle('settings:set-noise-filter-mode', (_event, mode: unknown): void => {
+  if (mode !== 'standard' && mode !== 'advanced') throw new Error('Invalid noise filter mode.');
+  appSettings.noiseFilterMode = mode;
+  writeSettings(appSettings);
+});
+ipcMain.handle('assets:read-denoiser', (): { wasm: Buffer; worklet: string } => {
+  const base = path.join(__dirname, '..', 'dist', 'desktop', 'browser', 'assets', 'df');
+  return { wasm: readFileSync(path.join(base, 'df_bg.wasm')), worklet: readFileSync(path.join(base, 'dfn-worklet.js'), 'utf8') };
+});
 ipcMain.handle('settings:set-audio', (_event, patch: unknown): AppSettings => {
   if (!patch || typeof patch !== 'object') throw new Error('Invalid audio settings.');
   const value = patch as Partial<AppSettings>;
@@ -637,9 +647,14 @@ ipcMain.handle('voice:get-webrtc-configuration', (event): { iceServers: Array<{ 
   if (!isTrustedRendererURL(event.sender.getURL())) throw new Error('Untrusted WebRTC configuration request.');
   return { iceServers: [{ urls: webRTCStunURL }] };
 });
-  ipcMain.handle('voice:set-presence', (_event, channelID: unknown): Promise<{ started_at: string | null } | null> => {
-    if (channelID !== null && (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0)) throw new Error('Invalid voice channel ID.');
-    return authenticatedRequest<{ started_at?: string | null }>('/voice/presence', 'PUT', { channel_id: channelID as number | null })
+  ipcMain.handle('voice:set-presence', (_event, payload: unknown): Promise<{ started_at: string | null } | null> => {
+    if (payload === null) return authenticatedRequest<{ started_at?: string | null }>('/voice/presence', 'PUT', { channel_id: null })
+      .then((response) => (response ? { started_at: response.started_at ?? null } : null));
+    if (payload === undefined || typeof payload !== 'object') throw new Error('Invalid voice presence payload.');
+    const body = payload as { channel_id?: unknown; muted?: unknown; camera?: unknown; screen?: unknown };
+    if (typeof body.channel_id !== 'number' || !Number.isSafeInteger(body.channel_id) || body.channel_id <= 0) throw new Error('Invalid voice channel ID.');
+    if (typeof body.muted !== 'boolean' || typeof body.camera !== 'boolean' || typeof body.screen !== 'boolean') throw new Error('Invalid voice state.');
+    return authenticatedRequest<{ started_at?: string | null }>('/voice/presence', 'PUT', { channel_id: body.channel_id, muted: body.muted, camera: body.camera, screen: body.screen })
       .then((response) => (response ? { started_at: response.started_at ?? null } : null));
   });
 ipcMain.handle('realtime:send-webrtc-signal', (event, signal: unknown): void => {

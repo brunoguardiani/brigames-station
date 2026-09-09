@@ -38,3 +38,6 @@ coverage.txt
 Thumbs.db
 .idea/
 .vscode/
+
+# DeepFilterNet assets (copied from node_modules by scripts/copy-dfn.mjs)
+apps/desktop/src/assets/df/

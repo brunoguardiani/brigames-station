@@ -26,6 +26,9 @@ type client struct {
 type VoicePresence struct {
 	ServerID  int64 `json:"server_id"`
 	ChannelID int64 `json:"channel_id"`
+	Muted     bool  `json:"muted"`
+	Camera    bool  `json:"camera"`
+	Screen    bool  `json:"screen"`
 }
 
 type UnregisterResult struct {

@@ -45,7 +45,7 @@ contextBridge.exposeInMainWorld('desktop', {
   voice: {
     join: (channelID: number) => ipcRenderer.invoke('voice:join', channelID),
     getWebRTCConfiguration: () => ipcRenderer.invoke('voice:get-webrtc-configuration'),
-    setPresence: (channelID: number | null) => ipcRenderer.invoke('voice:set-presence', channelID),
+    setPresence: (payload: number | null | { channel_id: number; muted: boolean; camera: boolean; screen: boolean }) => ipcRenderer.invoke('voice:set-presence', payload),
   },
   screenShare: {
     listSources: () => ipcRenderer.invoke('screen-share:list-sources'),
@@ -53,11 +53,15 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   invites: { create: (serverID: number) => ipcRenderer.invoke('invites:create', serverID), createAndCopy: (serverID: number) => ipcRenderer.invoke('invites:create-and-copy', serverID), join: (code: string) => ipcRenderer.invoke('invites:join', code) },
   settings: {
-    get: (): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, { volume: number; muted: boolean }> }> => ipcRenderer.invoke('settings:get'),
+    get: (): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean; noiseFilterMode: 'standard' | 'advanced'; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, { volume: number; muted: boolean }> }> => ipcRenderer.invoke('settings:get'),
     setHardwareAcceleration: (enabled: boolean): Promise<{ restartRequired: boolean }> => ipcRenderer.invoke('settings:set-hardware-acceleration', enabled),
     setNoiseFilter: (enabled: boolean): Promise<void> => ipcRenderer.invoke('settings:set-noise-filter', enabled),
+    setNoiseFilterMode: (mode: 'standard' | 'advanced'): Promise<void> => ipcRenderer.invoke('settings:set-noise-filter-mode', mode),
     setAudio: (patch: { inputVolumeDb?: number; inputDeviceId?: string | null; outputDeviceId?: string | null; outputVolume?: number }): Promise<void> => ipcRenderer.invoke('settings:set-audio', patch),
     setParticipantAudio: (userID: string, preference: { volume: number; muted: boolean } | null): Promise<void> => ipcRenderer.invoke('settings:set-participant-audio', userID, preference),
+  },
+  assets: {
+    readDenoiser: (): Promise<{ wasm: Uint8Array; worklet: string }> => ipcRenderer.invoke('assets:read-denoiser'),
   },
   realtime: {
     onConnected: (callback: () => void): (() => void) => {
