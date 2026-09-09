@@ -1947,7 +1947,6 @@ const cameraEffects: Array<{ id: CameraEffectID; label: string; filter: string }
   { id: 'vintage', label: 'Vintage', filter: 'sepia(0.4) saturate(1.4) contrast(1.05) brightness(1.05)' },
   { id: 'cold', label: 'Frio', filter: 'saturate(1.3) hue-rotate(15deg) brightness(1.05) contrast(1.05)' },
 ];
-type ServerMember = { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null; voice_call_started_at?: string | null };
 
 const peerSessionIDPattern = /^[A-Za-z0-9_-]{1,64}$/;
 type ScreenShareQuality = '720p' | '1080p';
