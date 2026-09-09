@@ -75,7 +75,17 @@
                             }
                           </button>
                         }
-                        @if (voiceChannel()?.id === channel.id && isVoiceMemberMuted(member)) {
+                        @if (member.voice_channel_id === channel.id && isVoiceMemberScreenSharing(member)) {
+                          <span class="voice-participant-muted screen-sharing" title="Compartilhando a tela" aria-label="Compartilhando a tela">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m10 9 4 2-4 2Z" fill="currentColor" stroke="none"/><path d="M8 22h8M12 18v4"/></svg>
+                          </span>
+                        }
+                        @if (member.voice_channel_id === channel.id && isVoiceMemberCameraOn(member)) {
+                          <span class="voice-participant-muted camera-on" title="Câmera ligada" aria-label="Câmera ligada">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 10 4.5-2.25A1 1 0 0 1 21 8.65v6.7a1 1 0 0 1-1.5.9L15 14"/></svg>
+                          </span>
+                        }
+                        @if (member.voice_channel_id === channel.id && isVoiceMemberMuted(member)) {
                           <span class="voice-participant-muted" title="Microfone silenciado" aria-label="Microfone silenciado">
                             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg>
                           </span>
@@ -302,9 +312,18 @@
           <label class="setting-slider"><span>Volume de saída <strong>{{ (outputVolume() * 100).toFixed(0) }}%</strong></span><input type="range" min="0" max="2" step="0.05" [value]="outputVolume()" (input)="setOutputVolume(+$any($event.target).value)"></label>
         </div>
         <div class="setting-row">
-          <div><strong>Supressão de ruído (RNNoise)</strong><p>Rede neural local que remove ventilador, ambiente e parte do teclado do microfone. Roda offline, aplica na hora.</p></div>
+          <div><strong>Supressão de ruído</strong><p>Rede neural local que remove ventilador, teclado e sons do ambiente do microfone. Roda offline, aplica na hora.</p></div>
           <label class="setting-switch"><input type="checkbox" name="noiseFilter" [checked]="noiseFilterEnabled()" (change)="toggleNoiseFilter($any($event.target).checked)"><span class="setting-track" aria-hidden="true"></span></label>
         </div>
+        @if (noiseFilterEnabled()) {
+          <div class="setting-row setting-row-column">
+            <div class="setting-row-head"><strong>Modo de supressão</strong></div>
+            <select class="setting-select" [value]="noiseFilterMode()" (change)="selectNoiseFilterMode($any($event.target).value)">
+              <option value="standard">Padrão — leve, remove ventilador e teclado (RNNoise)</option>
+              <option value="advanced">Avançado — remove também sons do ambiente durante a fala (DeepFilterNet)</option>
+            </select>
+          </div>
+        }
         <h3 class="settings-section-title">Sistema</h3>
         <div class="setting-row">
           <div><strong>Aceleração de hardware</strong><p>Usa a GPU para renderizar a interface e os vídeos. Desative em caso de travamentos, tela piscando ou driver problemático.</p></div>

@@ -8,6 +8,8 @@ import { ParticipantContextMenuComponent } from './participant-context-menu.comp
 import { ScreenShareControlComponent } from './screen-share-control.component';
 import { clearSelectedMediaWhenUnavailable, selectedMediaSourceForParticipant, type ParticipantContextMenuState, type SelectedMediaSource, type SelectedParticipantMedia } from './participant-context-menu-state';
 import { MicProcessor, createMicWorkletNode, decibelsToLinearGain } from './rnnoise/mic-processor';
+import { DfnProcessor, createDfnWorkletNode } from './deepfilter/dfn-processor';
+import { SpeakingDetectorService } from './speaking-detector.service';
 
 type BackendState = 'checking' | 'available' | 'unavailable';
 type User = { id: number; username: string; email: string; role: string; avatar_id: string | null };
@@ -118,7 +120,15 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly voiceRoomTimers = signal<Map<number, number>>(new Map());
   private voiceCallTimer?: ReturnType<typeof setInterval>;
   protected readonly voiceParticipants = signal<VoiceParticipant[]>([]);
+  protected readonly voiceMemberStates = signal<Map<number, { muted: boolean; camera: boolean; screen: boolean }>>(new Map());
   protected readonly activeSpeakerIDs = signal<string[]>([]);
+  private readonly detectedSpeakingIDs = signal<ReadonlySet<string>>(new Set());
+  protected readonly speakingIDs = computed(() => {
+    const identities = new Set(this.activeSpeakerIDs());
+    for (const identity of this.detectedSpeakingIDs()) identities.add(identity);
+    return identities;
+  });
+  private readonly speakingDetector = new SpeakingDetectorService((identities) => this.detectedSpeakingIDs.set(identities));
   protected readonly microphoneMuted = signal(false);
   protected readonly screenSharePickerOpen = signal(false);
   protected readonly screenShareQuality = signal<ScreenShareQuality>('720p');
@@ -138,6 +148,7 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly hardwareAccelerationRestartRequired = signal(false);
   protected readonly appVersion = signal('');
   protected readonly noiseFilterEnabled = signal(true);
+  protected readonly noiseFilterMode = signal<'standard' | 'advanced'>('standard');
   protected readonly inputVolumeDb = signal(0);
   protected readonly inputDeviceId = signal<string | null>(null);
   protected readonly outputDeviceId = signal<string | null>(null);
@@ -153,7 +164,7 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly outputDevices = signal<MediaDeviceInfo[]>([]);
   protected readonly micLevel = signal(0);
   protected readonly micTestActive = signal(false);
-  private micProcessor?: MicProcessor;
+  private micProcessor?: MicProcessor | DfnProcessor;
   private micTest?: { stream: MediaStream; context: AudioContext; source: MediaStreamAudioSourceNode; worklet: AudioWorkletNode };
   protected readonly cameraEffect = signal<CameraEffectID>('none');
   protected readonly voiceMediaActive = signal(false);
@@ -273,6 +284,8 @@ export class AppComponent implements OnInit, OnDestroy {
         else this.removePeerMediaForUser(presence.user_id, voiceChannel.id);
       }
       if (this.selectedServer()?.id !== presence.server_id) return;
+      if (presence.channel_id !== null) this.noteVoiceMemberState(presence.user_id, { muted: presence.muted === true, camera: presence.camera === true, screen: presence.screen === true });
+      else this.noteVoiceMemberState(presence.user_id, null);
       if (this.participantContextMenu()?.participantID === presence.user_id && presence.channel_id !== this.participantContextMenu()?.channelID) this.closeParticipantContextMenu();
       this.members.update((members) => members.map((member) => member.id === presence.user_id ? { ...member, voice_channel_id: presence.channel_id } : member));
     });
@@ -296,6 +309,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.removeWebRTCSignalListener?.();
     this.removeUpdaterStatusListener?.();
     void this.participantAudio.flushPersistence();
+    this.speakingDetector.clear();
     void this.leaveVoiceChannel();
   }
 
@@ -366,7 +380,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   protected async selectServer(server: Server): Promise<void> {
     this.closeParticipantContextMenu(); this.error.set(''); this.voiceMediaVisible.set(false); this.selectedServer.set(server); this.selectedChannel.set(null); this.messages.set([]); this.channels.set([]); this.members.set([]);
-    try { const [channels, members] = await Promise.all([window.desktop.channels.list(server.id), window.desktop.servers.listMembers(server.id)]); this.channels.set(channels); this.members.set(members); this.ingestVoiceCallTimers(members); }
+    try { const [channels, members] = await Promise.all([window.desktop.channels.list(server.id), window.desktop.servers.listMembers(server.id)]); this.channels.set(channels); this.members.set(members); this.ingestVoiceCallTimers(members); this.ingestVoiceMemberStates(members); }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to load channels.')); }
   }
   protected async selectChannel(channel: Channel): Promise<void> { if (channel.type !== 'text') return; this.closeParticipantContextMenu(); this.voiceMediaVisible.set(false); this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
@@ -403,10 +417,14 @@ export class AppComponent implements OnInit, OnDestroy {
           document.body.appendChild(audio);
           this.voiceAudioElements.set(audioID, { userID: participant.identity, element: audio });
           this.participantAudio.register(participant.identity, audio);
+          this.speakingDetector.register(participant.identity, track.mediaStreamTrack);
         }
       });
-      room.on(RoomEvent.TrackUnsubscribed, (track, publication) => {
-        if (track.kind === Track.Kind.Audio) this.removeVoiceAudioElement(publication.trackSid);
+      room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+        if (track.kind === Track.Kind.Audio) {
+          this.removeVoiceAudioElement(publication.trackSid);
+          this.speakingDetector.unregister(participant.identity);
+        }
       });
       room.on(RoomEvent.ParticipantConnected, () => {
         refreshParticipants();
@@ -414,6 +432,7 @@ export class AppComponent implements OnInit, OnDestroy {
       });
       room.on(RoomEvent.ParticipantDisconnected, (participant) => {
         this.removeVoiceAudioForUser(participant.identity);
+        this.speakingDetector.unregister(participant.identity);
         if (this.participantContextMenu()?.participantID === Number(participant.identity)) this.closeParticipantContextMenu();
         refreshParticipants();
         if (this.voiceRoom === room) this.playVoiceSound('leave');
@@ -422,6 +441,18 @@ export class AppComponent implements OnInit, OnDestroy {
         refreshParticipants();
       });
       room.on(RoomEvent.TrackUnmuted, () => {
+        refreshParticipants();
+      });
+      room.on(RoomEvent.TrackPublished, () => {
+        refreshParticipants();
+      });
+      room.on(RoomEvent.TrackUnpublished, () => {
+        refreshParticipants();
+      });
+      room.on(RoomEvent.ParticipantMetadataChanged, () => {
+        refreshParticipants();
+      });
+      room.on(RoomEvent.Reconnected, () => {
         refreshParticipants();
       });
       room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
@@ -439,6 +470,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.screenSharing.set(false);
         this.cameraEnabled.set(false);
         this.removeVoiceAudio();
+        this.speakingDetector.clear();
         this.closePeerMedia();
         void window.desktop.voice.setPresence(null).catch(() => undefined);
       });
@@ -447,9 +479,13 @@ export class AppComponent implements OnInit, OnDestroy {
       await this.enableMicrophone(room);
       this.voiceRoom = room;
       this.voiceChannel.set(channel);
-      const presenceResult = await window.desktop.voice.setPresence(channel.id);
+      const presenceResult = await this.syncVoicePresence(channel.id);
       this.applyVoiceCallStartedAt(channel.id, presenceResult?.started_at ?? null);
       refreshParticipants();
+      const participantsSyncTimer = setInterval(() => {
+        if (this.voiceRoom === room) refreshParticipants();
+      }, 2_000);
+      room.once(RoomEvent.Disconnected, () => clearInterval(participantsSyncTimer));
       await this.queryPeerMedia(channel);
       this.playVoiceSound('join');
     }
@@ -477,6 +513,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.closeParticipantContextMenu();
     this.voiceMediaVisible.set(false);
     this.removeVoiceAudio();
+    this.speakingDetector.clear();
     this.closePeerMedia();
     try {
       if (room) {
@@ -564,11 +601,26 @@ export class AppComponent implements OnInit, OnDestroy {
     await this.voiceRoom.localParticipant.setMicrophoneEnabled(!muted, this.microphoneCaptureOptions());
     if (!muted) await this.applyMicProcessor(this.voiceRoom);
     this.microphoneMuted.set(muted);
+    const channel = this.voiceChannel();
+    if (channel) void this.syncVoicePresence(channel.id).catch(() => undefined);
     this.playVoiceSound(muted ? 'mute' : 'unmute');
   }
   private microphoneCaptureOptions(): AudioCaptureOptions {
     const deviceID = this.inputDeviceId();
     return { echoCancellation: true, autoGainControl: true, noiseSuppression: !this.noiseFilterEnabled(), ...(deviceID ? { deviceId: { ideal: deviceID } } : {}) } as AudioCaptureOptions;
+  }
+  private noteVoiceMemberState(userID: number, state: { muted: boolean; camera: boolean; screen: boolean } | null): void {
+    this.voiceMemberStates.update((states) => {
+      const next = new Map(states);
+      if (state) next.set(userID, state);
+      else next.delete(userID);
+      return next;
+    });
+  }
+  private syncVoicePresence(channelID: number): Promise<{ started_at: string | null } | null> {
+    const state = { muted: this.microphoneMuted(), camera: this.cameraEnabled(), screen: this.screenSharing() };
+    this.noteVoiceMemberState(this.currentUserID(), state);
+    return window.desktop.voice.setPresence({ channel_id: channelID, ...state });
   }
   private async enableMicrophone(room: Room): Promise<void> {
     await room.localParticipant.setMicrophoneEnabled(true, this.microphoneCaptureOptions());
@@ -576,18 +628,48 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   private async applyMicProcessor(room: Room): Promise<void> {
     const track = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
-    if (!(track instanceof LocalAudioTrack) || track.getProcessor()?.name === 'mic-processor') return;
+    if (!(track instanceof LocalAudioTrack)) return;
+    const current = track.getProcessor()?.name;
+    if (current === 'mic-processor' || current === 'dfn-processor') return;
     try {
-      const processor = new MicProcessor({ rnnoise: this.noiseFilterEnabled(), gainDecibels: this.inputVolumeDb() });
-      processor.onLevel = (level) => this.micLevel.set(level);
-      processor.onRnnoiseFailed = () => console.error('[voice] rnnoise crashed in worklet; falling back to raw passthrough');
+      const processor = this.noiseFilterMode() === 'advanced'
+        ? this.createDfnProcessor()
+        : this.createRnnoiseProcessor();
       await track.setProcessor(processor);
       this.micProcessor = processor;
-      console.info('[voice] mic processor attached', JSON.stringify({ rnnoise: this.noiseFilterEnabled(), gainDb: this.inputVolumeDb() }));
+      console.info('[voice] mic processor attached', JSON.stringify({ mode: processor.name, filter: this.noiseFilterEnabled(), gainDb: this.inputVolumeDb() }));
+      return;
     } catch (error) {
       console.warn('[voice] unable to attach mic processor', error instanceof Error ? error.message : String(error));
-      await track.mediaStreamTrack.applyConstraints({ echoCancellation: true, autoGainControl: true, noiseSuppression: true }).catch(() => undefined);
     }
+    if (this.noiseFilterMode() === 'advanced') {
+      try {
+        const processor = this.createRnnoiseProcessor();
+        await track.setProcessor(processor);
+        this.micProcessor = processor;
+        console.warn('[voice] deepfilternet unavailable; fell back to rnnoise');
+        return;
+      } catch (error) {
+        console.warn('[voice] unable to attach rnnoise fallback', error instanceof Error ? error.message : String(error));
+      }
+    }
+    await track.mediaStreamTrack.applyConstraints({ echoCancellation: true, autoGainControl: true, noiseSuppression: true }).catch(() => undefined);
+  }
+  private createRnnoiseProcessor(): MicProcessor {
+    const processor = new MicProcessor({ rnnoise: this.noiseFilterEnabled(), gainDecibels: this.inputVolumeDb() });
+    processor.onLevel = (level) => this.noteMicLevel(level);
+    processor.onRnnoiseFailed = () => console.error('[voice] rnnoise crashed in worklet; falling back to raw passthrough');
+    return processor;
+  }
+  private createDfnProcessor(): DfnProcessor {
+    const processor = new DfnProcessor({ enabled: this.noiseFilterEnabled(), gainDecibels: this.inputVolumeDb() });
+    processor.onLevel = (level) => this.noteMicLevel(level);
+    processor.onProcessorFailed = () => console.error('[voice] deepfilternet crashed in worklet; falling back to raw passthrough');
+    return processor;
+  }
+  private noteMicLevel(level: number): void {
+    this.micLevel.set(level);
+    this.speakingDetector.setLocalLevel(this.voiceRoom?.localParticipant.identity ?? null, level);
   }
   protected async toggleNoiseFilter(enabled: boolean): Promise<void> {
     this.noiseFilterEnabled.set(enabled);
@@ -595,8 +677,24 @@ export class AppComponent implements OnInit, OnDestroy {
     catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
     const processor = this.micProcessor;
     if (processor) {
-      processor.setRnnoise(enabled);
-      console.info('[voice] rnnoise', enabled ? 'enabled' : 'disabled');
+      if (processor instanceof DfnProcessor) processor.setEnabled(enabled);
+      else processor.setRnnoise(enabled);
+      console.info('[voice] noise filter', enabled ? 'enabled' : 'disabled');
+    }
+  }
+  protected async selectNoiseFilterMode(mode: string): Promise<void> {
+    const next = mode === 'advanced' ? 'advanced' : 'standard';
+    if (next === this.noiseFilterMode()) return;
+    this.noiseFilterMode.set(next);
+    try { await window.desktop.settings.setNoiseFilterMode(next); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+    const room = this.voiceRoom;
+    const track = room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
+    if (room && track instanceof LocalAudioTrack) {
+      try { await track.stopProcessor(); } catch { /* no processor attached */ }
+      this.micProcessor = undefined;
+      await this.applyMicProcessor(room);
+      console.info('[voice] noise filter mode', next);
     }
   }
   protected async setInputVolume(decibels: number): Promise<void> {
@@ -645,10 +743,20 @@ export class AppComponent implements OnInit, OnDestroy {
       const context = new AudioContext();
       if (context.state === 'suspended') await context.resume().catch(() => undefined);
       const source = context.createMediaStreamSource(stream);
-      const worklet = await createMicWorkletNode(context, { rnnoise: this.noiseFilterEnabled(), gain: 1 });
+      let worklet: AudioWorkletNode;
+      if (this.noiseFilterMode() === 'advanced') {
+        try {
+          worklet = await createDfnWorkletNode(context, { enabled: this.noiseFilterEnabled() });
+        } catch (error) {
+          console.warn('[voice] deepfilternet unavailable for mic test; using rnnoise', error instanceof Error ? error.message : String(error));
+          worklet = await createMicWorkletNode(context, { rnnoise: this.noiseFilterEnabled(), gain: 1 });
+        }
+      } else {
+        worklet = await createMicWorkletNode(context, { rnnoise: this.noiseFilterEnabled(), gain: 1 });
+      }
       worklet.parameters.get('gain')!.value = decibelsToLinearGain(this.inputVolumeDb());
       worklet.port.onmessage = (event: MessageEvent<{ level?: number }>) => {
-        if (typeof event.data?.level === 'number') this.micLevel.set(event.data.level);
+        if (typeof event.data?.level === 'number') this.noteMicLevel(event.data.level);
       };
       source.connect(worklet);
       worklet.connect(context.destination);
@@ -678,6 +786,8 @@ export class AppComponent implements OnInit, OnDestroy {
       else await this.stopLocalPeerMedia('camera');
       this.cameraEnabled.set(enabled);
       if (enabled && !preserveNavigation) this.voiceMediaVisible.set(true);
+      const cameraChannel = this.voiceChannel();
+      if (cameraChannel) void this.syncVoicePresence(cameraChannel.id).catch(() => undefined);
     } catch (error) { this.error.set(this.messageFor(error, 'Unable to change the camera state.')); }
     finally { this.loading.set(false); }
   }
@@ -722,6 +832,8 @@ export class AppComponent implements OnInit, OnDestroy {
       this.screenSharing.set(true);
       this.voiceMediaVisible.set(true);
       this.screenSharePickerOpen.set(false);
+      const screenChannel = this.voiceChannel();
+      if (screenChannel) void this.syncVoicePresence(screenChannel.id).catch(() => undefined);
     } catch (error) { this.error.set(this.messageFor(error, 'Unable to start screen sharing.')); }
     finally {
       if (stream && this.localPeerMedia.get('screen') !== stream) stream.getTracks().forEach((track) => track.stop());
@@ -747,6 +859,8 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       await this.stopLocalPeerMedia('screen');
       this.screenSharing.set(false);
+      const stopChannel = this.voiceChannel();
+      if (stopChannel) void this.syncVoicePresence(stopChannel.id).catch(() => undefined);
     }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to stop screen sharing.')); }
     finally { this.loading.set(false); }
@@ -1104,7 +1218,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   private async restorePeerMediaAfterRealtimeReconnect(channel: Channel): Promise<void> {
     try {
-      const presenceResult = await window.desktop.voice.setPresence(channel.id);
+      const presenceResult = await this.syncVoicePresence(channel.id);
       this.applyVoiceCallStartedAt(channel.id, presenceResult?.started_at ?? null);
       if (this.voiceChannel()?.id !== channel.id) return;
       const server = this.selectedServer();
@@ -1528,10 +1642,23 @@ export class AppComponent implements OnInit, OnDestroy {
     this.messages.update((messages) => messages.map((message) => message.author_id === userID ? { ...message, author_avatar_id: avatarID } : message));
   }
   protected legacyInlineParticipantMedia(): PeerMediaAvailability | undefined { return undefined; }
-  protected isSpeaking(participant: VoiceParticipant): boolean { return this.activeSpeakerIDs().includes(participant.identity); }
+  protected isSpeaking(participant: VoiceParticipant): boolean { return this.speakingIDs().has(participant.identity); }
   protected voiceMembers(channelID: number): ServerMember[] { return this.members().filter((member) => member.voice_channel_id === channelID); }
-  protected isVoiceMemberSpeaking(member: ServerMember): boolean { return this.activeSpeakerIDs().includes(String(member.id)); }
-  protected isVoiceMemberMuted(member: ServerMember): boolean { return this.voiceParticipants().find((participant) => participant.identity === String(member.id))?.muted ?? false; }
+  protected isVoiceMemberSpeaking(member: ServerMember): boolean { return this.speakingIDs().has(String(member.id)); }
+  protected isVoiceMemberMuted(member: ServerMember): boolean {
+    if (member.id === this.currentUserID()) return this.microphoneMuted();
+    const live = this.voiceParticipants().find((participant) => participant.identity === String(member.id))?.muted;
+    if (live !== undefined) return live;
+    return this.voiceMemberStates().get(member.id)?.muted ?? false;
+  }
+  protected isVoiceMemberCameraOn(member: ServerMember): boolean {
+    if (member.id === this.currentUserID()) return this.cameraEnabled();
+    return this.voiceMemberStates().get(member.id)?.camera ?? false;
+  }
+  protected isVoiceMemberScreenSharing(member: ServerMember): boolean {
+    if (member.id === this.currentUserID()) return this.screenSharing();
+    return this.voiceMemberStates().get(member.id)?.screen ?? false;
+  }
   protected isCurrentVoiceMember(member: ServerMember): boolean { return member.id === this.currentUserID(); }
   protected selectedMediaForParticipant(userID: number): SelectedMediaSource | null { return selectedMediaSourceForParticipant(this.selectedMedia(), userID); }
   protected participantAudioPreference(userID: number): ParticipantAudioPreference {
@@ -1643,6 +1770,7 @@ export class AppComponent implements OnInit, OnDestroy {
       const settings = await window.desktop.settings.get();
       this.hardwareAcceleration.set(settings.hardwareAcceleration);
       this.noiseFilterEnabled.set(settings.noiseFilter);
+      this.noiseFilterMode.set(settings.noiseFilterMode === 'advanced' ? 'advanced' : 'standard');
       this.appVersion.set(settings.appVersion);
       this.inputVolumeDb.set(settings.inputVolumeDb);
       this.inputDeviceId.set(settings.inputDeviceId);
@@ -1785,8 +1913,12 @@ export class AppComponent implements OnInit, OnDestroy {
       if (this.selectedServer()?.id === serverID) {
         this.members.set(members);
         this.ingestVoiceCallTimers(members);
+        this.ingestVoiceMemberStates(members);
       }
     } catch { /* The next explicit server selection will retry. */ }
+  }
+  private ingestVoiceMemberStates(members: ServerMember[]): void {
+    this.voiceMemberStates.set(new Map(members.filter((member) => member.voice_channel_id !== null && member.voice_muted != null).map((member) => [member.id, { muted: member.voice_muted === true, camera: member.voice_camera === true, screen: member.voice_screen === true }])));
   }
   private async refreshBackendStatus(): Promise<void> { try { const health = await window.desktop.backend.getHealth(); this.status.set(health.status === 'alive' ? 'available' : 'unavailable'); } catch { this.status.set('unavailable'); } }
   private messageFor(error: unknown, fallback: string): string { return error instanceof Error ? error.message : fallback; }

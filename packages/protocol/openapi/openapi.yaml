@@ -387,8 +387,9 @@ paths:
       description: >-
         Updates the caller's in-process voice-channel presence. A channel ID
         marks the caller as connected to that voice channel; null clears the
-        current assignment. Changes are delivered to server members through
-        the `voice.presence.changed` realtime event.
+        current assignment. Optional muted, camera and screen flags publish the
+        caller's voice state to server members. Changes are delivered to server
+        members through the `voice.presence.changed` realtime event.
       operationId: updateVoicePresence
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -687,6 +688,15 @@ components:
           type: [string, 'null']
           format: date-time
           description: When the voice channel's ongoing call started (RFC 3339 UTC), or null when the member is not connected to an active call.
+        voice_muted:
+          type: [boolean, 'null']
+          description: Whether the member's microphone is muted, or null when not connected to voice.
+        voice_camera:
+          type: [boolean, 'null']
+          description: Whether the member is broadcasting camera, or null when not connected to voice.
+        voice_screen:
+          type: [boolean, 'null']
+          description: Whether the member is sharing a screen, or null when not connected to voice.
     Invite:
       type: object
       required: [id, server_id, code, expires_at]
@@ -740,3 +750,12 @@ components:
           format: int64
           minimum: 1
           description: Voice channel to join, or null to clear the current presence.
+        muted:
+          type: boolean
+          description: Whether the caller's microphone is muted while connected to the channel.
+        camera:
+          type: boolean
+          description: Whether the caller is broadcasting camera while connected to the channel.
+        screen:
+          type: boolean
+          description: Whether the caller is sharing a screen while connected to the channel.

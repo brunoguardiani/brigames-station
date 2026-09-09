@@ -76,11 +76,14 @@ func registerServerRoutes(router *gin.Engine, service *servers.Service, tokens *
 		for _, item := range items {
 			var voiceChannelID *int64
 			var voiceCallStartedAt *string
+			var voiceMuted, voiceCamera, voiceScreen *bool
 			if presence, present := hub.GetVoicePresence(item.ID); present && presence.ServerID == serverID {
 				voiceChannelID = &presence.ChannelID
 				voiceCallStartedAt = voiceCallStartedAtValue(hub, presence.ChannelID)
+				muted, camera, screen := presence.Muted, presence.Camera, presence.Screen
+				voiceMuted, voiceCamera, voiceScreen = &muted, &camera, &screen
 			}
-			response = append(response, map[string]any{"id": item.ID, "username": item.Username, "role": item.Role, "avatar_id": item.AvatarID, "online": hub.IsOnline(item.ID), "voice_channel_id": voiceChannelID, "voice_call_started_at": voiceCallStartedAt})
+			response = append(response, map[string]any{"id": item.ID, "username": item.Username, "role": item.Role, "avatar_id": item.AvatarID, "online": hub.IsOnline(item.ID), "voice_channel_id": voiceChannelID, "voice_call_started_at": voiceCallStartedAt, "voice_muted": voiceMuted, "voice_camera": voiceCamera, "voice_screen": voiceScreen})
 		}
 		context.JSON(http.StatusOK, response)
 	})

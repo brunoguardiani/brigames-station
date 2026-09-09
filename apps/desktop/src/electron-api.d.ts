@@ -40,7 +40,7 @@ interface Window {
     voice: {
       join(channelID: number): Promise<{ url: string; token: string; room: string }>;
       getWebRTCConfiguration(): Promise<{ iceServers: Array<{ urls: string }> }>;
-      setPresence(channelID: number | null): Promise<{ started_at: string | null } | null>;
+      setPresence(payload: number | null | { channel_id: number; muted: boolean; camera: boolean; screen: boolean }): Promise<{ started_at: string | null } | null>;
     };
     screenShare: {
       listSources(): Promise<Array<{ id: string; name: string; thumbnail: string; icon?: string; kind: 'screen' | 'window'; category: 'window' | 'screen' | 'application' }>>;
@@ -48,17 +48,21 @@ interface Window {
     };
     invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; createAndCopy(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
     settings: {
-      get(): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, { volume: number; muted: boolean }> }>;
+      get(): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean; noiseFilterMode: 'standard' | 'advanced'; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, { volume: number; muted: boolean }> }>;
       setHardwareAcceleration(enabled: boolean): Promise<{ restartRequired: boolean }>;
       setNoiseFilter(enabled: boolean): Promise<void>;
+      setNoiseFilterMode(mode: 'standard' | 'advanced'): Promise<void>;
       setAudio(patch: { inputVolumeDb?: number; inputDeviceId?: string | null; outputDeviceId?: string | null; outputVolume?: number }): Promise<void>;
       setParticipantAudio(userID: string, preference: { volume: number; muted: boolean } | null): Promise<void>;
+    };
+    assets: {
+      readDenoiser(): Promise<{ wasm: Uint8Array; worklet: string }>;
     };
     realtime: {
       onConnected(callback: () => void): () => void;
       onMessageCreated(callback: (message: Message) => void): () => void;
       onPresenceChanged(callback: (presence: { user_id: number; online: boolean }) => void): () => void;
-      onVoicePresenceChanged(callback: (presence: { server_id: number; user_id: number; channel_id: number | null; started_at?: string | null }) => void): () => void;
+      onVoicePresenceChanged(callback: (presence: { server_id: number; user_id: number; channel_id: number | null; started_at?: string | null; muted?: boolean; camera?: boolean; screen?: boolean }) => void): () => void;
       onProfileUpdated(callback: (profile: { user_id: number; avatar_id: string | null }) => void): () => void;
       sendWebRTCSignal(signal: { channel_id: number; to_user_id: number; kind: 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch'; session_id?: string; payload: unknown }): Promise<void>;
       onWebRTCSignal(callback: (signal: { channel_id: number; from_user_id: number; kind: 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch'; session_id?: string; payload: unknown }) => void): () => void;
@@ -88,4 +92,4 @@ interface Channel {
 }
 interface Message { id: number; channel_id: number; author_id: number; author_username: string; author_avatar_id: string | null; content: string; created_at: string; }
 interface MessagePage { messages: Message[]; next_before: number | null; }
-interface ServerMember { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null; voice_call_started_at?: string | null; }
+interface ServerMember { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null; voice_call_started_at?: string | null; voice_muted?: boolean | null; voice_camera?: boolean | null; voice_screen?: boolean | null; }
