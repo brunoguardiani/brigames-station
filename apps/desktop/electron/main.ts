@@ -14,7 +14,8 @@ const webRTCStunURL = process.env['WEBRTC_STUN_URL'] ?? 'stun:stun.cloudflare.co
 const debugEnabled = process.argv.includes('--debug') || process.env['BRIGAMES_DEBUG'] === '1';
 
 type ParticipantAudioPreference = { volume: number; muted: boolean };
-type AppSettings = { hardwareAcceleration: boolean; noiseFilter: boolean; noiseFilterMode: 'standard' | 'advanced'; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, ParticipantAudioPreference> };
+type ParticipantAudioSource = 'microphone' | 'screen-share';
+type AppSettings = { hardwareAcceleration: boolean; noiseFilter: boolean; noiseFilterMode: 'standard' | 'advanced'; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, ParticipantAudioPreference>; screenShareAudioPreferences: Record<string, ParticipantAudioPreference> };
 function desktopAppVersion(): string {
   try {
     const version = (JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { version?: string }).version;
@@ -46,9 +47,10 @@ function readSettings(): AppSettings {
       outputDeviceId: typeof raw.outputDeviceId === 'string' && raw.outputDeviceId ? raw.outputDeviceId : null,
       outputVolume: typeof raw.outputVolume === 'number' && Number.isFinite(raw.outputVolume) ? Math.min(2, Math.max(0, raw.outputVolume)) : 1,
       participantAudioPreferences: participantAudioPreferences(raw.participantAudioPreferences),
+      screenShareAudioPreferences: participantAudioPreferences(raw.screenShareAudioPreferences),
     };
   } catch {
-    return { hardwareAcceleration: true, noiseFilter: true, noiseFilterMode: 'standard', inputVolumeDb: 0, inputDeviceId: null, outputDeviceId: null, outputVolume: 1, participantAudioPreferences: {} };
+    return { hardwareAcceleration: true, noiseFilter: true, noiseFilterMode: 'standard', inputVolumeDb: 0, inputDeviceId: null, outputDeviceId: null, outputVolume: 1, participantAudioPreferences: {}, screenShareAudioPreferences: {} };
   }
 }
 function writeSettings(settings: AppSettings): void {
@@ -551,14 +553,16 @@ ipcMain.handle('settings:set-audio', (_event, patch: unknown): AppSettings => {
   writeSettings(appSettings);
   return { ...appSettings };
 });
-ipcMain.handle('settings:set-participant-audio', (_event, userID: unknown, preference: unknown): void => {
+ipcMain.handle('settings:set-participant-audio', (_event, userID: unknown, source: unknown, preference: unknown): void => {
   if (typeof userID !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(userID)) throw new Error('Invalid participant ID.');
+  if (source !== 'microphone' && source !== 'screen-share') throw new Error('Invalid participant audio source.');
+  const preferences = (source as ParticipantAudioSource) === 'screen-share' ? appSettings.screenShareAudioPreferences : appSettings.participantAudioPreferences;
   if (preference === null) {
-    delete appSettings.participantAudioPreferences[userID];
+    delete preferences[userID];
   } else {
     const parsed = participantAudioPreferences({ [userID]: preference })[userID];
     if (!parsed) throw new Error('Invalid participant audio preference.');
-    appSettings.participantAudioPreferences[userID] = parsed;
+    preferences[userID] = parsed;
   }
   writeSettings(appSettings);
 });

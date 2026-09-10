@@ -48,12 +48,12 @@ interface Window {
     };
     invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; createAndCopy(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
     settings: {
-      get(): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean; noiseFilterMode: 'standard' | 'advanced'; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, { volume: number; muted: boolean }> }>;
+      get(): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean; noiseFilterMode: 'standard' | 'advanced'; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, { volume: number; muted: boolean }>; screenShareAudioPreferences: Record<string, { volume: number; muted: boolean }> }>;
       setHardwareAcceleration(enabled: boolean): Promise<{ restartRequired: boolean }>;
       setNoiseFilter(enabled: boolean): Promise<void>;
       setNoiseFilterMode(mode: 'standard' | 'advanced'): Promise<void>;
       setAudio(patch: { inputVolumeDb?: number; inputDeviceId?: string | null; outputDeviceId?: string | null; outputVolume?: number }): Promise<void>;
-      setParticipantAudio(userID: string, preference: { volume: number; muted: boolean } | null): Promise<void>;
+      setParticipantAudio(userID: string, source: 'microphone' | 'screen-share', preference: { volume: number; muted: boolean } | null): Promise<void>;
     };
     assets: {
       readDenoiser(): Promise<{ wasm: Uint8Array; worklet: string }>;

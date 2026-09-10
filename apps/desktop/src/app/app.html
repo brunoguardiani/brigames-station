@@ -128,13 +128,16 @@
           @if (participantContextMember(); as contextMember) {
             <app-participant-context-menu [participantName]="contextMember.username" [x]="menuState.x" [y]="menuState.y"
               [audioPreference]="participantAudioPreference(contextMember.id)"
+              [screenShareAudioPreference]="screenShareAudioPreference(contextMember.id)"
+              [hasScreenShareAudio]="hasScreenShareAudio(contextMember.id)"
               [hasCamera]="!!cameraForMember(contextMember.id, menuState.channelID)"
               [hasScreenShare]="!!screenShareForMember(contextMember.id, menuState.channelID)"
               [cameraActive]="isWatchingMemberMedia(contextMember.id, menuState.channelID, 'camera')"
               [screenShareActive]="isWatchingMemberMedia(contextMember.id, menuState.channelID, 'screen')"
               (closed)="closeParticipantContextMenu()" (camera)="selectParticipantMedia(contextMember.id, menuState.channelID, 'camera')"
               (screenShare)="selectParticipantMedia(contextMember.id, menuState.channelID, 'screen')"
-              (volumeChange)="setParticipantVolume(contextMember.id, $event)" (muteToggle)="toggleParticipantLocalMute(contextMember.id)" />
+              (volumeChange)="setParticipantVolume(contextMember.id, $event)" (muteToggle)="toggleParticipantLocalMute(contextMember.id)"
+              (screenShareVolumeChange)="setScreenShareVolume(contextMember.id, $event)" (screenShareMuteToggle)="toggleScreenShareLocalMute(contextMember.id)" />
           }
         }
       } @else { <section class="sidebar-empty"><div class="empty-icon">⌘</div><h2>Your servers</h2><p>Select a server on the left or create a new one.</p></section> }
