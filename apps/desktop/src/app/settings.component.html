@@ -1,0 +1,231 @@
+<div class="settings-backdrop" (click)="closed.emit()">
+  <section class="settings-modal" role="dialog" aria-modal="true" aria-label="Configurações" (click)="$event.stopPropagation()">
+    <button type="button" class="settings-close" title="Fechar (Esc)" aria-label="Fechar configurações" (click)="closed.emit()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    <nav class="settings-sidebar" aria-label="Seções de configurações">
+      <div class="settings-nav">
+        <p class="settings-nav-group">Configurações do usuário</p>
+        <button #firstNav type="button" [class.active]="section() === 'account'" (click)="section.set('account')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Minha conta</span></button>
+        <button type="button" [class.active]="section() === 'profile'" (click)="section.set('profile')"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg><span>Perfil</span></button>
+        <div class="settings-nav-divider" aria-hidden="true"></div>
+        <p class="settings-nav-group">Configurações do app</p>
+        <button type="button" [class.active]="section() === 'voice'" (click)="section.set('voice')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg><span>Voz e vídeo</span></button>
+        <button type="button" [class.active]="section() === 'appearance'" (click)="section.set('appearance')"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2Z"/></svg><span>Aparência</span></button>
+        <button type="button" [class.active]="section() === 'notifications'" (click)="section.set('notifications')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span>Notificações</span></button>
+        <button type="button" [class.active]="section() === 'system'" (click)="section.set('system')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg><span>Sistema</span>@if (hardwareAccelerationRestartRequired()) { <span class="settings-nav-badge" title="Reinício pendente" aria-label="Reinício pendente"></span> }</button>
+      </div>
+      <div class="settings-sidebar-footer">
+        <button type="button" class="settings-logout" (click)="logout.emit()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>Sair</button>
+        <p class="settings-version">brigames-station {{ appVersion() }}</p>
+      </div>
+    </nav>
+    <div class="settings-content">
+      <h2 id="settings-title">{{ sectionTitles[section()] }}</h2>
+      <div class="settings-pane">
+      @switch (section()) {
+      @case ('account') {
+        <div class="account-card">
+          <div class="account-banner" aria-hidden="true"></div>
+          <div class="account-body">
+            <div class="account-avatar">
+              @if (avatarURL(user()!.avatar_id); as avatar) { <img [src]="avatar" alt=""> } @else { {{ user()!.username.slice(0, 1).toUpperCase() }} }
+            </div>
+            <div class="account-info">
+              <strong>{{ user()!.username }}</strong>
+              <span class="account-role">{{ user()!.role }}</span>
+              <small>{{ user()!.email }}</small>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card settings-card-column">
+          <div class="settings-card-head">
+            <div><strong>Dados da conta</strong><p>Altere seu nome de usuário e e-mail quando quiser.</p></div>
+            @if (!profileEditing()) {
+              <button class="settings-btn" type="button" (click)="startProfileEdit()">Editar perfil</button>
+            }
+          </div>
+          @if (!profileEditing()) {
+            <div class="account-rows">
+              <div class="account-row"><span>Nome de usuário</span><strong>{{ user()!.username }}</strong></div>
+              <div class="account-row"><span>E-mail</span><strong>{{ user()!.email }}</strong></div>
+            </div>
+          } @else {
+            <label class="settings-field">
+              <span>Nome de usuário</span>
+              <input type="text" autocomplete="username" maxlength="32" [value]="profileUsername" [disabled]="profileSaving()" (input)="profileUsername = $any($event.target).value" (keyup.enter)="submitProfile()">
+            </label>
+            <label class="settings-field">
+              <span>E-mail</span>
+              <input type="email" autocomplete="email" [value]="profileEmail" [disabled]="profileSaving()" (input)="profileEmail = $any($event.target).value" (keyup.enter)="submitProfile()">
+            </label>
+            @if (profileError()) { <p class="settings-field-error" role="alert">{{ profileError() }}</p> }
+            <div class="settings-card-actions">
+              <button class="settings-btn" type="button" [disabled]="profileSaving()" (click)="cancelProfileEdit()">Cancelar</button>
+              <button class="settings-btn settings-btn-primary" type="button" [disabled]="profileSaving() || !profileValid()" (click)="submitProfile()">{{ profileSaving() ? 'Salvando…' : 'Salvar alterações' }}</button>
+            </div>
+          }
+        </div>
+        <div class="settings-card settings-card-column">
+          <div class="settings-card-head">
+            <div><strong>Status</strong><p>Como você aparece para os outros membros.</p></div>
+          </div>
+          <div class="status-options" role="radiogroup" aria-label="Status">
+            <button type="button" role="radio" [class.selected]="user()!.status === 'online'" [attr.aria-checked]="user()!.status === 'online'" (click)="statusSelect.emit('online')"><span class="status-dot status-dot-online"></span><span><strong>Online</strong><small>Disponível para conversar</small></span></button>
+            <button type="button" role="radio" [class.selected]="user()!.status === 'idle'" [attr.aria-checked]="user()!.status === 'idle'" (click)="statusSelect.emit('idle')"><span class="status-dot status-dot-idle"></span><span><strong>Ausente</strong><small>Aparece amarelo para os outros</small></span></button>
+            <button type="button" role="radio" [class.selected]="user()!.status === 'invisible'" [attr.aria-checked]="user()!.status === 'invisible'" (click)="statusSelect.emit('invisible')"><span class="status-dot status-dot-offline"></span><span><strong>Invisível</strong><small>Aparece offline, mas continua conectado</small></span></button>
+          </div>
+        </div>
+        <div class="settings-card settings-card-column">
+          <div class="settings-card-head">
+            <div><strong>Senha</strong><p>Use pelo menos 12 caracteres para manter a conta segura.</p></div>
+            @if (!passwordEditing()) {
+              <button class="settings-btn" type="button" (click)="startPasswordEdit()">Alterar senha</button>
+            }
+          </div>
+          @if (!passwordEditing()) {
+            <div class="account-rows">
+              <div class="account-row"><span>Senha atual</span><strong>••••••••••••</strong></div>
+            </div>
+          } @else {
+            <label class="settings-field">
+              <span>Senha atual</span>
+              <input type="password" autocomplete="current-password" [value]="passwordCurrent" [disabled]="passwordSaving()" (input)="passwordCurrent = $any($event.target).value">
+            </label>
+            <label class="settings-field">
+              <span>Nova senha</span>
+              <input type="password" autocomplete="new-password" [value]="passwordNew" [disabled]="passwordSaving()" (input)="passwordNew = $any($event.target).value" (keyup.enter)="submitPassword()">
+            </label>
+            <label class="settings-field">
+              <span>Confirmar nova senha</span>
+              <input type="password" autocomplete="new-password" [value]="passwordConfirm" [disabled]="passwordSaving()" (input)="passwordConfirm = $any($event.target).value" (keyup.enter)="submitPassword()">
+            </label>
+            @if (passwordError()) { <p class="settings-field-error" role="alert">{{ passwordError() }}</p> }
+            <div class="settings-card-actions">
+              <button class="settings-btn" type="button" [disabled]="passwordSaving()" (click)="cancelPasswordEdit()">Cancelar</button>
+              <button class="settings-btn settings-btn-primary" type="button" [disabled]="passwordSaving() || !passwordValid()" (click)="submitPassword()">{{ passwordSaving() ? 'Salvando…' : 'Alterar senha' }}</button>
+            </div>
+          }
+        </div>
+        <p class="settings-hint">Escolha um avatar na seção Perfil para mudar como você aparece para os outros.</p>
+      }
+      @case ('profile') {
+        <div class="settings-card settings-card-column">
+          <div class="settings-card-head">
+            <div><strong>Avatar</strong><p>Escolha como você aparece para os outros usuários.</p></div>
+            @if (avatarSaving()) { <small class="settings-saving">Salvando…</small> }
+          </div>
+          <div class="avatar-grid" role="listbox" aria-label="Avatares disponíveis">
+            <button class="avatar-option avatar-option-default" type="button" role="option" [class.selected]="selectedAvatarID() === null" [attr.aria-selected]="selectedAvatarID() === null" aria-label="Usar avatar padrão" [disabled]="avatarSaving()" (click)="avatarSelect.emit(null)"><span>{{ user()!.username.slice(0, 1).toUpperCase() }}</span><small>Padrão</small></button>
+            @for (avatarID of availableAvatars; track avatarID) {
+              <button class="avatar-option" type="button" role="option" [class.selected]="selectedAvatarID() === avatarID" [attr.aria-selected]="selectedAvatarID() === avatarID" [attr.aria-label]="'Selecionar avatar ' + ($index + 1)" [disabled]="avatarSaving()" (click)="avatarSelect.emit(avatarID)"><img [src]="avatarURL(avatarID)" alt=""></button>
+            }
+          </div>
+          <div class="settings-card-actions">
+            <button class="settings-btn settings-btn-primary" type="button" [disabled]="avatarSaving() || selectedAvatarID() === user()!.avatar_id" (click)="avatarSave.emit()">{{ avatarSaving() ? 'Salvando…' : 'Salvar avatar' }}</button>
+          </div>
+        </div>
+      }
+      @case ('voice') {
+        <h3 class="settings-subhead">Dispositivo de entrada</h3>
+        <div class="settings-card settings-card-column">
+          <label class="settings-field">
+            <span>Dispositivo de entrada</span>
+            <select [value]="inputDeviceId() ?? ''" (change)="inputDeviceSelect.emit($any($event.target).value)">
+              <option value="">Padrão do sistema</option>
+              @for (device of inputDevices(); track device.deviceId) { <option [value]="device.deviceId">{{ device.label || device.deviceId }}</option> }
+            </select>
+          </label>
+          <label class="settings-field">
+            <span>Volume de entrada <strong>{{ inputVolumeDb() > 0 ? '+' : '' }}{{ inputVolumeDb() }} dB</strong></span>
+            <span class="settings-slider">
+              <span class="settings-slider-track" aria-hidden="true"><span class="settings-slider-fill" [style.width.%]="inputVolumePercent()"></span></span>
+              <input type="range" min="-30" max="30" step="1" [value]="inputVolumeDb()" (input)="inputVolumeChange.emit(+$any($event.target).value)">
+            </span>
+            <span class="settings-meter" aria-hidden="true"><span [style.width.%]="micLevel() * 100"></span></span>
+          </label>
+          <div class="settings-card-actions">
+            <button class="settings-btn" type="button" (click)="micTestToggle.emit()">{{ micTestActive() ? 'Parar verificação' : 'Checar microfone' }}</button>
+          </div>
+        </div>
+        <h3 class="settings-subhead">Dispositivo de saída</h3>
+        <div class="settings-card settings-card-column">
+          <label class="settings-field">
+            <span>Dispositivo de saída</span>
+            <select [value]="outputDeviceId() ?? ''" (change)="outputDeviceSelect.emit($any($event.target).value)">
+              <option value="">Padrão do sistema</option>
+              @for (device of outputDevices(); track device.deviceId) { <option [value]="device.deviceId">{{ device.label || device.deviceId }}</option> }
+            </select>
+          </label>
+          <label class="settings-field">
+            <span>Volume de saída <strong>{{ (outputVolume() * 100).toFixed(0) }}%</strong></span>
+            <span class="settings-slider">
+              <span class="settings-slider-track" aria-hidden="true"><span class="settings-slider-fill" [style.width.%]="outputVolumePercent()"></span></span>
+              <input type="range" min="0" max="2" step="0.05" [value]="outputVolume()" (input)="outputVolumeChange.emit(+$any($event.target).value)">
+            </span>
+          </label>
+        </div>
+        <h3 class="settings-subhead">Supressão de ruído</h3>
+        <div class="settings-card">
+          <div><strong>Supressão de ruído</strong><p>Rede neural local que remove ventilador, teclado e sons do ambiente do microfone. Roda offline, aplica na hora.</p></div>
+          <label class="settings-switch"><input type="checkbox" name="noiseFilter" [checked]="noiseFilterEnabled()" (change)="noiseFilterToggle.emit($any($event.target).checked)"><span class="settings-switch-track" aria-hidden="true"></span></label>
+        </div>
+        @if (noiseFilterEnabled()) {
+          <div class="settings-card settings-card-column">
+            <label class="settings-field">
+              <span>Modo de supressão</span>
+              <select [value]="noiseFilterMode()" (change)="noiseFilterModeSelect.emit($any($event.target).value)">
+                <option value="standard">Padrão — leve, remove ventilador e teclado (RNNoise)</option>
+                <option value="advanced">Avançado — remove também sons do ambiente durante a fala (DeepFilterNet)</option>
+              </select>
+            </label>
+          </div>
+        }
+      }
+      @case ('appearance') {
+        <div class="settings-card settings-card-column">
+          <div><strong>Cor de destaque</strong><p>Define a cor principal de botões, controles e destaques do app.</p></div>
+          <div class="accent-swatches" role="radiogroup" aria-label="Cor de destaque">
+            @for (option of accentOptions; track option) {
+              <button type="button" role="radio" class="accent-swatch" [class.selected]="accent() === option" [attr.aria-checked]="accent() === option" [attr.aria-label]="accentLabels[option] ?? option" [style.background]="accentColors[option]" (click)="accentSelect.emit(option)"></button>
+            }
+          </div>
+        </div>
+        <div class="settings-card settings-card-column">
+          <label class="settings-field">
+            <span>Tamanho da fonte <strong>{{ fontScalePercent() }}%</strong></span>
+            <span class="settings-slider">
+              <span class="settings-slider-track" aria-hidden="true"><span class="settings-slider-fill" [style.width.%]="(fontScale() - 0.9) / 0.25 * 100"></span></span>
+              <input type="range" min="0.9" max="1.15" step="0.05" [value]="fontScale()" (input)="fontScaleChange.emit(+$any($event.target).value)">
+            </span>
+          </label>
+        </div>
+        <div class="settings-card settings-card-column">
+          <div><strong>Densidade das mensagens</strong><p>Compacta aproxima as mensagens do canal para mostrar mais conteúdo.</p></div>
+          <div class="segmented" role="radiogroup" aria-label="Densidade das mensagens">
+            <button type="button" role="radio" [class.selected]="density() === 'cozy'" [attr.aria-checked]="density() === 'cozy'" (click)="densitySelect.emit('cozy')">Confortável</button>
+            <button type="button" role="radio" [class.selected]="density() === 'compact'" [attr.aria-checked]="density() === 'compact'" (click)="densitySelect.emit('compact')">Compacta</button>
+          </div>
+        </div>
+      }
+      @case ('notifications') {
+        <div class="settings-card">
+          <div><strong>Menções</strong><p>Mostra uma notificação do sistema quando alguém menciona você ou @everyone e o app não está em foco.</p></div>
+          <label class="settings-switch"><input type="checkbox" name="mentionNotifications" [checked]="mentionNotifications()" (change)="mentionNotificationsToggle.emit($any($event.target).checked)"><span class="settings-switch-track" aria-hidden="true"></span></label>
+        </div>
+      }
+      @case ('system') {
+        <div class="settings-card">
+          <div><strong>Aceleração de hardware</strong><p>Usa a GPU para renderizar a interface e os vídeos. Desative em caso de travamentos, tela piscando ou driver problemático.</p></div>
+          <label class="settings-switch"><input type="checkbox" name="hardwareAcceleration" [checked]="hardwareAcceleration()" (change)="hardwareAccelerationToggle.emit($any($event.target).checked)"><span class="settings-switch-track" aria-hidden="true"></span></label>
+        </div>
+        @if (hardwareAccelerationRestartRequired()) {
+          <div class="settings-restart">
+            <p>Reinicie o aplicativo para aplicar a mudança.</p>
+            <button class="settings-btn settings-btn-primary" type="button" (click)="relaunch.emit()">Reiniciar agora</button>
+          </div>
+        }
+      }
+    }
+    </div>
+    </div>
+  </section>
+</div>

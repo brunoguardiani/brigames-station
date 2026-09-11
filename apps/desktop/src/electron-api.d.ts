@@ -23,6 +23,9 @@ interface Window {
       register(username: string, email: string, password: string): Promise<User>;
       currentSession(): Promise<User | null>;
       updateAvatar(avatarID: string | null): Promise<User>;
+      updateProfile(profile: { username?: string; email?: string }): Promise<User>;
+      changePassword(currentPassword: string, newPassword: string): Promise<void>;
+      setStatus(status: 'online' | 'idle' | 'invisible'): Promise<User>;
       logout(): Promise<void>;
       onSessionExpired(callback: () => void): () => void;
     };
@@ -48,12 +51,14 @@ interface Window {
     };
     invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; createAndCopy(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
     settings: {
-      get(): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean; noiseFilterMode: 'standard' | 'advanced'; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, { volume: number; muted: boolean }> }>;
+      get(): Promise<{ hardwareAcceleration: boolean; active: boolean; appVersion: string; noiseFilter: boolean; noiseFilterMode: 'standard' | 'advanced'; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; mentionNotifications: boolean; appearance: { accent: string; fontScale: number; density: 'cozy' | 'compact' }; participantAudioPreferences: Record<string, { volume: number; muted: boolean }> }>;
       setHardwareAcceleration(enabled: boolean): Promise<{ restartRequired: boolean }>;
       setNoiseFilter(enabled: boolean): Promise<void>;
       setNoiseFilterMode(mode: 'standard' | 'advanced'): Promise<void>;
       setAudio(patch: { inputVolumeDb?: number; inputDeviceId?: string | null; outputDeviceId?: string | null; outputVolume?: number }): Promise<void>;
       setParticipantAudio(userID: string, preference: { volume: number; muted: boolean } | null): Promise<void>;
+      setMentionNotifications(enabled: boolean): Promise<void>;
+      setAppearance(patch: { accent?: string; fontScale?: number; density?: 'cozy' | 'compact' }): Promise<void>;
     };
     assets: {
       readDenoiser(): Promise<{ wasm: Uint8Array; worklet: string }>;
@@ -63,7 +68,7 @@ interface Window {
       onMessageCreated(callback: (message: Message) => void): () => void;
       onPresenceChanged(callback: (presence: { user_id: number; online: boolean }) => void): () => void;
       onVoicePresenceChanged(callback: (presence: { server_id: number; user_id: number; channel_id: number | null; started_at?: string | null; muted?: boolean; camera?: boolean; screen?: boolean }) => void): () => void;
-      onProfileUpdated(callback: (profile: { user_id: number; avatar_id: string | null }) => void): () => void;
+      onProfileUpdated(callback: (profile: { user_id: number; username?: string; avatar_id?: string | null; status?: 'online' | 'idle' | 'invisible' }) => void): () => void;
       sendWebRTCSignal(signal: { channel_id: number; to_user_id: number; kind: 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch'; session_id?: string; payload: unknown }): Promise<void>;
       onWebRTCSignal(callback: (signal: { channel_id: number; from_user_id: number; kind: 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch'; session_id?: string; payload: unknown }) => void): () => void;
     };
@@ -79,7 +84,7 @@ interface Server {
   created_at: string;
 }
 
-interface User { id: number; username: string; email: string; role: string; avatar_id: string | null; }
+interface User { id: number; username: string; email: string; role: string; avatar_id: string | null; status: 'online' | 'idle' | 'invisible'; }
 
 interface Channel {
   id: number;
@@ -92,4 +97,4 @@ interface Channel {
 }
 interface Message { id: number; channel_id: number; author_id: number; author_username: string; author_avatar_id: string | null; content: string; created_at: string; }
 interface MessagePage { messages: Message[]; next_before: number | null; }
-interface ServerMember { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null; voice_call_started_at?: string | null; voice_muted?: boolean | null; voice_camera?: boolean | null; voice_screen?: boolean | null; }
+interface ServerMember { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; status: 'online' | 'idle' | 'invisible' | 'offline'; voice_channel_id: number | null; voice_call_started_at?: string | null; voice_muted?: boolean | null; voice_camera?: boolean | null; voice_screen?: boolean | null; }

@@ -138,15 +138,49 @@
           }
         }
       } @else { <section class="sidebar-empty"><div class="empty-icon">⌘</div><h2>Your servers</h2><p>Select a server on the left or create a new one.</p></section> }
-      @if (voiceChannel()) {
-        <div class="voice-controls">
-          <button type="button" [class.muted]="microphoneMuted()" [title]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" [attr.aria-label]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" (click)="toggleMicrophone()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg></button>
-          <button class="camera-control" type="button" [class.active]="cameraEnabled()" [title]="cameraEnabled() ? 'Desativar câmera' : 'Ativar câmera'" [attr.aria-label]="cameraEnabled() ? 'Desativar câmera' : 'Ativar câmera'" (click)="toggleCamera()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 10 4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg></button>
-          <app-screen-share-control [active]="screenSharing()" [busy]="loading()" (start)="openScreenSharePicker()" (stop)="stopScreenShare()" (change)="openScreenSharePicker()" />
-          <button class="leave-call" type="button" title="Sair do canal de voz" aria-label="Sair do canal de voz" (click)="leaveVoiceChannel()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8.01 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92"/><path d="m3 3 18 18"/></svg></button>
-        </div>
+      @if (voiceChannel(); as activeVoiceChannel) {
+        <section class="voice-panel" aria-label="Painel da chamada de voz">
+          <header>
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+            <div><strong>{{ activeVoiceChannel.name }}</strong><small>Voz conectada</small></div>
+          </header>
+          <div class="voice-controls voice-panel-actions">
+            <button type="button" [class.muted]="microphoneMuted()" [title]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" [attr.aria-label]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" (click)="toggleMicrophone()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg></button>
+            <button class="camera-control" type="button" [class.active]="cameraEnabled()" [title]="cameraEnabled() ? 'Desativar câmera' : 'Ativar câmera'" [attr.aria-label]="cameraEnabled() ? 'Desativar câmera' : 'Ativar câmera'" (click)="toggleCamera()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 10 4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg></button>
+            <app-screen-share-control [active]="screenSharing()" [busy]="loading()" (start)="openScreenSharePicker()" (stop)="stopScreenShare()" (change)="openScreenSharePicker()" />
+            <button class="leave-call" type="button" title="Desconectar" aria-label="Desconectar do canal de voz" (click)="leaveVoiceChannel()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8.01 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92"/><path d="m3 3 18 18"/></svg></button>
+          </div>
+        </section>
       }
-      <footer class="account-bar"><div class="avatar">@if (avatarURL(user()!.avatar_id); as avatar) { <img [src]="avatar" alt=""> } @else { {{ user()!.username.slice(0, 1).toUpperCase() }} }</div><div><strong>{{ user()!.username }}</strong><small>{{ user()!.role }}</small></div><button type="button" title="Configurações" aria-label="Abrir configurações" (click)="openSettings()"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg></button><button type="button" title="Log out" (click)="logout()">⇥</button></footer>
+      <footer class="account-bar">
+        @if (accountMenuOpen()) {
+          <div class="account-menu-backdrop" (click)="closeAccountMenu()"></div>
+          <div class="account-menu" role="menu" aria-label="Menu da conta">
+            <header class="account-menu-head">
+              <span class="account-menu-avatar">@if (avatarURL(user()!.avatar_id); as avatar) { <img [src]="avatar" alt=""> } @else { {{ user()!.username.slice(0, 1).toUpperCase() }} }</span>
+              <div><strong>{{ user()!.username }}</strong><small class="account-menu-status-label">{{ ownStatusLabel(user()!.status) }}</small></div>
+            </header>
+            <p class="account-menu-group">Status</p>
+            <button type="button" role="menuitemradio" [attr.aria-checked]="user()!.status === 'online'" (click)="setStatus('online'); closeAccountMenu()"><span class="account-menu-dot online"></span>Online</button>
+            <button type="button" role="menuitemradio" [attr.aria-checked]="user()!.status === 'idle'" (click)="setStatus('idle'); closeAccountMenu()"><span class="account-menu-dot idle"></span>Ausente</button>
+            <button type="button" role="menuitemradio" [attr.aria-checked]="user()!.status === 'invisible'" (click)="setStatus('invisible'); closeAccountMenu()"><span class="account-menu-dot offline"></span>Invisível</button>
+            <div class="account-menu-divider" aria-hidden="true"></div>
+            <button type="button" role="menuitem" class="account-menu-settings" (click)="openSettingsFromAccountMenu()"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>Configurações</button>
+          </div>
+        }
+        <button type="button" class="account-bar-user" title="Menu da conta" aria-label="Abrir menu da conta" aria-haspopup="menu" [attr.aria-expanded]="accountMenuOpen()" (click)="toggleAccountMenu()">
+          <span class="account-bar-avatar-wrap">
+            <span class="avatar">@if (avatarURL(user()!.avatar_id); as avatar) { <img [src]="avatar" alt=""> } @else { {{ user()!.username.slice(0, 1).toUpperCase() }} }</span>
+            <span class="account-status-dot" [class.online]="user()!.status === 'online'" [class.idle]="user()!.status === 'idle'" aria-hidden="true"></span>
+          </span>
+          <span class="account-bar-info"><strong>{{ user()!.username }}</strong><small>{{ ownStatusLabel(user()!.status) }}</small></span>
+        </button>
+        <div class="account-bar-actions">
+          <button type="button" [class.muted]="microphoneMuted()" [title]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" [attr.aria-label]="microphoneMuted() ? 'Ativar microfone' : 'Silenciar microfone'" (click)="toggleMicrophone()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3"/><path d="M19 10v2a7 7 0 0 1-12 4.9"/><path d="M5 10v2a7 7 0 0 0 2.1 5"/><path d="M12 19v3"/><path d="m3 3 18 18"/></svg></button>
+          <button type="button" title="Configurações" aria-label="Abrir configurações" (click)="openSettings()"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          <button type="button" title="Log out" aria-label="Sair da conta" (click)="logout()">⇥</button>
+        </div>
+      </footer>
     </aside>
 
     <section class="conversation-panel" [class.voice-media-active]="voiceChannel() !== null && voiceMediaVisible()">
@@ -174,7 +208,7 @@
         <form #messageComposer class="message-composer" (ngSubmit)="sendMessage()"><label class="sr-only" for="message-content">Message</label><textarea id="message-content" name="messageContent" [(ngModel)]="messageContent" required maxlength="4000" rows="1" [placeholder]="'Message #' + channel.name" (keydown)="handleMessageComposerKeydown($event, messageComposer)" (input)="autoResizeComposer($event)"></textarea><button type="submit" aria-label="Enviar mensagem" [disabled]="loading() || !messageContent.trim()"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button></form>
       } @else { <section class="workspace-empty"><img class="brand large" src="assets/brigames-station-icon.png" alt=""><h1>Welcome to brigames-station</h1><p>Select a server and channel to begin a conversation.</p></section> }
     </section>
-    <aside class="members-sidebar" aria-label="Membros do servidor">@if (selectedServer()) { <header><strong>Membros</strong><span>{{ members().length }}</span></header><div class="member-list">@for (member of members(); track member.id) { <div class="member" [class.online]="member.online"><span class="member-avatar">@if (avatarURL(member.avatar_id); as avatar) { <img [src]="avatar" alt=""> } @else { {{ member.username.slice(0, 1).toUpperCase() }} }</span><div><strong>{{ member.username }}</strong><small>{{ member.online ? 'online' : 'offline' }}</small></div><span class="presence-dot" [class.online]="member.online"></span></div> }</div> }</aside>
+    <aside class="members-sidebar" aria-label="Membros do servidor">@if (selectedServer()) { <header><strong>Membros</strong><span>{{ members().length }}</span></header><div class="member-list">@for (member of members(); track member.id) { <div class="member" [class.online]="memberPresence(member) !== 'offline'"><span class="member-avatar">@if (avatarURL(member.avatar_id); as avatar) { <img [src]="avatar" alt=""> } @else { {{ member.username.slice(0, 1).toUpperCase() }} }</span><div><strong>{{ member.username }}</strong><small>{{ presenceLabel(memberPresence(member)) }}</small></div><span class="presence-dot" [class.online]="memberPresence(member) === 'online'" [class.idle]="memberPresence(member) === 'idle'"></span></div> }</div> }</aside>
     @if (miniCallPreview(); as preview) {
       @if (preview.visible && voiceChannel(); as channel) {
         <aside class="call-mini-preview" [class.reconnecting]="preview.state === 'reconnecting'" [class.dragged]="callMiniPreviewPosition() !== null" [style.left.px]="callMiniPreviewPosition()?.x" [style.top.px]="callMiniPreviewPosition()?.y" [style.width.px]="callMiniPreviewWidth()" aria-label="Prévia da chamada em andamento">
@@ -278,65 +312,23 @@
     </section>
   }
   @if (settingsOpen()) {
-    <section class="modal-backdrop" (click)="closeSettings()">
-      <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" (click)="$event.stopPropagation()">
-        <h2 id="settings-title">Configurações</h2>
-        <h3 class="settings-section-title">Perfil</h3>
-        <div class="setting-row setting-row-column profile-avatar-setting">
-          <div class="setting-row-head"><div><strong>Avatar</strong><p>Escolha como você aparece para os outros usuários.</p></div>@if (avatarSaving()) { <small>Salvando…</small> }</div>
-          <div class="avatar-grid" role="listbox" aria-label="Avatares disponíveis">
-            <button class="avatar-option avatar-option-default" type="button" role="option" [class.selected]="selectedAvatarID() === null" [attr.aria-selected]="selectedAvatarID() === null" aria-label="Usar avatar padrão" [disabled]="avatarSaving()" (click)="selectAvatar(null)"><span>{{ user()!.username.slice(0, 1).toUpperCase() }}</span><small>Padrão</small></button>
-            @for (avatarID of availableAvatars; track avatarID) {
-              <button class="avatar-option" type="button" role="option" [class.selected]="selectedAvatarID() === avatarID" [attr.aria-selected]="selectedAvatarID() === avatarID" [attr.aria-label]="'Selecionar avatar ' + ($index + 1)" [disabled]="avatarSaving()" (click)="selectAvatar(avatarID)"><img [src]="avatarURL(avatarID)" alt=""></button>
-            }
-          </div>
-          <div class="avatar-save-actions"><button type="button" [disabled]="avatarSaving() || selectedAvatarID() === user()!.avatar_id" (click)="saveSelectedAvatar()">{{ avatarSaving() ? 'Salvando…' : 'Salvar avatar' }}</button></div>
-        </div>
-        <h3 class="settings-section-title">Voz e áudio</h3>
-        <div class="setting-row setting-row-column">
-          <div class="setting-row-head"><strong>Dispositivo de entrada</strong></div>
-          <select class="setting-select" [value]="inputDeviceId() ?? ''" (change)="selectInputDevice($any($event.target).value)">
-            <option value="">Padrão do sistema</option>
-            @for (device of inputDevices(); track device.deviceId) { <option [value]="device.deviceId">{{ device.label || device.deviceId }}</option> }
-          </select>
-          <label class="setting-slider"><span>Volume de entrada <strong>{{ inputVolumeDb() > 0 ? '+' : '' }}{{ inputVolumeDb() }} dB</strong></span><input type="range" min="-30" max="30" step="1" [value]="inputVolumeDb()" (input)="setInputVolume(+$any($event.target).value)"></label>
-          <div class="setting-meter" aria-hidden="true"><span class="setting-meter-fill" [style.width.%]="micLevel() * 100"></span></div>
-          <button class="setting-test-button" type="button" (click)="toggleMicTest()">{{ micTestActive() ? 'Parar teste' : 'Testar microfone' }}</button>
-        </div>
-        <div class="setting-row setting-row-column">
-          <div class="setting-row-head"><strong>Dispositivo de saída</strong></div>
-          <select class="setting-select" [value]="outputDeviceId() ?? ''" (change)="selectOutputDevice($any($event.target).value)">
-            <option value="">Padrão do sistema</option>
-            @for (device of outputDevices(); track device.deviceId) { <option [value]="device.deviceId">{{ device.label || device.deviceId }}</option> }
-          </select>
-          <label class="setting-slider"><span>Volume de saída <strong>{{ (outputVolume() * 100).toFixed(0) }}%</strong></span><input type="range" min="0" max="2" step="0.05" [value]="outputVolume()" (input)="setOutputVolume(+$any($event.target).value)"></label>
-        </div>
-        <div class="setting-row">
-          <div><strong>Supressão de ruído</strong><p>Rede neural local que remove ventilador, teclado e sons do ambiente do microfone. Roda offline, aplica na hora.</p></div>
-          <label class="setting-switch"><input type="checkbox" name="noiseFilter" [checked]="noiseFilterEnabled()" (change)="toggleNoiseFilter($any($event.target).checked)"><span class="setting-track" aria-hidden="true"></span></label>
-        </div>
-        @if (noiseFilterEnabled()) {
-          <div class="setting-row setting-row-column">
-            <div class="setting-row-head"><strong>Modo de supressão</strong></div>
-            <select class="setting-select" [value]="noiseFilterMode()" (change)="selectNoiseFilterMode($any($event.target).value)">
-              <option value="standard">Padrão — leve, remove ventilador e teclado (RNNoise)</option>
-              <option value="advanced">Avançado — remove também sons do ambiente durante a fala (DeepFilterNet)</option>
-            </select>
-          </div>
-        }
-        <h3 class="settings-section-title">Sistema</h3>
-        <div class="setting-row">
-          <div><strong>Aceleração de hardware</strong><p>Usa a GPU para renderizar a interface e os vídeos. Desative em caso de travamentos, tela piscando ou driver problemático.</p></div>
-          <label class="setting-switch"><input type="checkbox" name="hardwareAcceleration" [checked]="hardwareAcceleration()" (change)="toggleHardwareAcceleration($event)"><span class="setting-track" aria-hidden="true"></span></label>
-        </div>
-        @if (hardwareAccelerationRestartRequired()) {
-          <p class="setting-restart-hint">Reinicie o aplicativo para aplicar a mudança.</p>
-          <div class="confirmation-actions"><button class="confirm-leave" type="button" (click)="relaunchApp()">Reiniciar agora</button></div>
-        }
-        <div class="confirmation-actions"><button type="button" (click)="closeSettings()">Fechar</button></div>
-        <p class="settings-version">brigames-station {{ appVersion() }}</p>
-      </section>
-    </section>
+    <app-settings
+      [user]="user" [appVersion]="appVersion" [avatarSaving]="avatarSaving" [selectedAvatarID]="selectedAvatarID"
+      [availableAvatars]="availableAvatars" [hardwareAcceleration]="hardwareAcceleration" [hardwareAccelerationRestartRequired]="hardwareAccelerationRestartRequired"
+      [noiseFilterEnabled]="noiseFilterEnabled" [noiseFilterMode]="noiseFilterMode"
+      [inputVolumeDb]="inputVolumeDb" [inputDeviceId]="inputDeviceId" [inputDevices]="inputDevices"
+      [outputVolume]="outputVolume" [outputDeviceId]="outputDeviceId" [outputDevices]="outputDevices"
+      [micLevel]="micLevel" [micTestActive]="micTestActive" [saveProfile]="saveProfile" [changePassword]="changePassword"
+      [mentionNotifications]="mentionNotifications" [accent]="accent" [fontScale]="fontScale" [density]="density" [accentOptions]="accentOptions"
+      (closed)="closeSettings()" (avatarSelect)="selectAvatar($event)" (avatarSave)="saveSelectedAvatar()"
+      (noiseFilterToggle)="toggleNoiseFilter($event)" (noiseFilterModeSelect)="selectNoiseFilterMode($event)"
+      (inputVolumeChange)="setInputVolume($event)" (inputDeviceSelect)="selectInputDevice($event)"
+      (outputVolumeChange)="setOutputVolume($event)" (outputDeviceSelect)="selectOutputDevice($event)"
+      (micTestToggle)="toggleMicTest()" (hardwareAccelerationToggle)="toggleHardwareAcceleration($event)"
+      (relaunch)="relaunchApp()" (logout)="logout()" (statusSelect)="setStatus($event)"
+      (mentionNotificationsToggle)="toggleMentionNotifications($event)" (accentSelect)="selectAccent($event)"
+      (fontScaleChange)="setFontScale($event)" (densitySelect)="selectDensity($event)"
+    />
   }
   @if (lightboxImageURL(); as url) { <div class="lightbox" role="dialog" aria-modal="true" aria-label="Imagem ampliada" (click)="closeLightbox()"><img [src]="url" alt="Imagem ampliada" referrerpolicy="no-referrer"></div> }
 </main>

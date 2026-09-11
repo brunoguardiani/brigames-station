@@ -83,7 +83,11 @@ func registerServerRoutes(router *gin.Engine, service *servers.Service, tokens *
 				muted, camera, screen := presence.Muted, presence.Camera, presence.Screen
 				voiceMuted, voiceCamera, voiceScreen = &muted, &camera, &screen
 			}
-			response = append(response, map[string]any{"id": item.ID, "username": item.Username, "role": item.Role, "avatar_id": item.AvatarID, "online": hub.IsOnline(item.ID), "voice_channel_id": voiceChannelID, "voice_call_started_at": voiceCallStartedAt, "voice_muted": voiceMuted, "voice_camera": voiceCamera, "voice_screen": voiceScreen})
+			status := item.Status
+			if !hub.IsOnline(item.ID) || status == "invisible" {
+				status = "offline"
+			}
+			response = append(response, map[string]any{"id": item.ID, "username": item.Username, "role": item.Role, "avatar_id": item.AvatarID, "status": status, "online": status != "offline", "voice_channel_id": voiceChannelID, "voice_call_started_at": voiceCallStartedAt, "voice_muted": voiceMuted, "voice_camera": voiceCamera, "voice_screen": voiceScreen})
 		}
 		context.JSON(http.StatusOK, response)
 	})

@@ -6,19 +6,23 @@ import { deriveCallMiniPreviewModel, type CallMediaDescriptor } from './call-min
 import { ParticipantAudioService, type ParticipantAudioPreference } from './participant-audio.service';
 import { ParticipantContextMenuComponent } from './participant-context-menu.component';
 import { ScreenShareControlComponent } from './screen-share-control.component';
+import { SettingsComponent } from './settings.component';
 import { clearSelectedMediaWhenUnavailable, selectedMediaSourceForParticipant, type ParticipantContextMenuState, type SelectedMediaSource, type SelectedParticipantMedia } from './participant-context-menu-state';
 import { MicProcessor, createMicWorkletNode, decibelsToLinearGain } from './rnnoise/mic-processor';
 import { DfnProcessor, createDfnWorkletNode } from './deepfilter/dfn-processor';
 import { SpeakingDetectorService } from './speaking-detector.service';
 
 type BackendState = 'checking' | 'available' | 'unavailable';
-type User = { id: number; username: string; email: string; role: string; avatar_id: string | null };
+export type User = { id: number; username: string; email: string; role: string; avatar_id: string | null; status: 'online' | 'idle' | 'invisible' };
+export type UserStatus = User['status'];
+export type AppearanceDensity = 'cozy' | 'compact';
 
 @Component({
-  selector: 'app-root', changeDetection: ChangeDetectionStrategy.OnPush, imports: [FormsModule, ParticipantContextMenuComponent, ScreenShareControlComponent], templateUrl: './app.html', styleUrl: './app.css',
+  selector: 'app-root', changeDetection: ChangeDetectionStrategy.OnPush, imports: [FormsModule, ParticipantContextMenuComponent, ScreenShareControlComponent, SettingsComponent], templateUrl: './app.html', styleUrl: './app.css',
 })
 export class AppComponent implements OnInit, OnDestroy {
   private readonly renderer = inject(Renderer2);
+  private readonly host = inject(ElementRef<HTMLElement>);
   private readonly dismissedUpdateVersion = signal<string | null>(null);
   private readonly peerMediaRevision = signal(0);
   private peerMediaStatsTimer?: ReturnType<typeof setInterval>;
@@ -141,6 +145,11 @@ export class AppComponent implements OnInit, OnDestroy {
   protected readonly screenPreviewEnabled = signal(false);
   protected readonly cameraPreviewEnabled = signal(true);
   protected readonly settingsOpen = signal(false);
+  protected readonly accountMenuOpen = signal(false);
+  protected readonly mentionNotifications = signal(true);
+  protected readonly accent = signal('violet');
+  protected readonly fontScale = signal(1);
+  protected readonly density = signal<AppearanceDensity>('cozy');
   protected readonly avatarSaving = signal(false);
   protected readonly selectedAvatarID = signal<string | null>(null);
   protected readonly availableAvatars = Array.from({ length: 17 }, (_, index) => `icon_${String(index + 1).padStart(2, '0')}`);
@@ -237,6 +246,7 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     void this.refreshBackendStatus();
     void this.restoreSession();
+    void this.loadAppearance();
     void this.participantAudio.restore().catch((error) => console.warn('[voice] unable to restore participant volumes', error));
     this.removeUpdaterStatusListener = window.desktop.updater.onStatusChange((status) => {
       this.updaterStatusRevision += 1;
@@ -269,11 +279,12 @@ export class AppComponent implements OnInit, OnDestroy {
       if (voiceChannel) void this.restorePeerMediaAfterRealtimeReconnect(voiceChannel);
     });
     this.removeRealtimeMessageListener = window.desktop.realtime.onMessageCreated((message) => {
+      this.notifyMention(message);
       if (this.selectedChannel()?.id !== message.channel_id) return;
       this.messages.update((items) => items.some((item) => item.id === message.id) ? items : [...items, message]);
     });
     this.removeRealtimePresenceListener = window.desktop.realtime.onPresenceChanged((presence) => {
-      this.members.update((members) => members.map((member) => member.id === presence.user_id ? { ...member, online: presence.online } : member));
+      this.members.update((members) => members.map((member) => member.id === presence.user_id ? { ...member, online: presence.online, status: presence.online ? (member.status === 'offline' ? 'online' : member.status) : 'offline' } : member));
     });
     this.removeRealtimeVoicePresenceListener = window.desktop.realtime.onVoicePresenceChanged((presence) => {
       const voiceChannel = this.voiceChannel();
@@ -290,7 +301,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.members.update((members) => members.map((member) => member.id === presence.user_id ? { ...member, voice_channel_id: presence.channel_id } : member));
     });
     this.removeRealtimeProfileListener = window.desktop.realtime.onProfileUpdated((profile) => {
-      this.applyAvatarUpdate(profile.user_id, profile.avatar_id);
+      this.applyProfileUpdate(profile.user_id, { ...(profile.username !== undefined ? { username: profile.username } : {}), avatar_id: profile.avatar_id });
     });
     this.removeWebRTCSignalListener = window.desktop.realtime.onWebRTCSignal((signal) => {
       void this.handlePeerMediaSignal(signal).catch((error) => console.error('[webrtc] incoming signal failed', error instanceof Error ? error.message : String(error)));
@@ -596,8 +607,11 @@ export class AppComponent implements OnInit, OnDestroy {
     writeCallMiniPreviewPlacement(this.callMiniPreviewPosition(), this.callMiniPreviewWidth());
   }
   protected async toggleMicrophone(): Promise<void> {
-    if (!this.voiceRoom) return;
     const muted = !this.microphoneMuted();
+    if (!this.voiceRoom) {
+      this.microphoneMuted.set(muted);
+      return;
+    }
     await this.voiceRoom.localParticipant.setMicrophoneEnabled(!muted, this.microphoneCaptureOptions());
     if (!muted) await this.applyMicProcessor(this.voiceRoom);
     this.microphoneMuted.set(muted);
@@ -623,8 +637,9 @@ export class AppComponent implements OnInit, OnDestroy {
     return window.desktop.voice.setPresence({ channel_id: channelID, ...state });
   }
   private async enableMicrophone(room: Room): Promise<void> {
-    await room.localParticipant.setMicrophoneEnabled(true, this.microphoneCaptureOptions());
-    await this.applyMicProcessor(room);
+    const muted = this.microphoneMuted();
+    await room.localParticipant.setMicrophoneEnabled(!muted, this.microphoneCaptureOptions());
+    if (!muted) await this.applyMicProcessor(room);
   }
   private async applyMicProcessor(room: Room): Promise<void> {
     const track = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
@@ -1636,10 +1651,28 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   private schedulePeerMediaLayout(): void { setTimeout(() => this.updatePeerMediaLayout(), 0); }
   private currentUserID(): number { return this.user()?.id ?? this.members().find((member) => member.username === this.user()?.username)?.id ?? 0; }
-  private applyAvatarUpdate(userID: number, avatarID: string | null): void {
-    this.user.update((user) => user?.id === userID ? { ...user, avatar_id: avatarID } : user);
-    this.members.update((members) => members.map((member) => member.id === userID ? { ...member, avatar_id: avatarID } : member));
-    this.messages.update((messages) => messages.map((message) => message.author_id === userID ? { ...message, author_avatar_id: avatarID } : message));
+  private applyProfileUpdate(userID: number, patch: { username?: string; avatar_id?: string | null; status?: UserStatus }): void {
+    this.user.update((user) => user && user.id === userID ? { ...user, ...patch } : user);
+    const memberPatch = { ...patch, ...(patch.status !== undefined ? { status: patch.status === 'invisible' ? 'offline' as const : patch.status } : {}) };
+    this.members.update((members) => members.map((member) => member.id === userID ? { ...member, ...memberPatch } : member));
+    this.messages.update((messages) => messages.map((message) => message.author_id === userID ? { ...message, ...(patch.username !== undefined ? { author_username: patch.username } : {}), ...(patch.avatar_id !== undefined ? { author_avatar_id: patch.avatar_id } : {}) } : message));
+  }
+  protected memberPresence(member: ServerMember): 'online' | 'idle' | 'offline' {
+    if (!member.online || member.status === 'offline' || member.status === 'invisible') return 'offline';
+    return member.status ?? 'online';
+  }
+  protected presenceLabel(presence: 'online' | 'idle' | 'offline'): string {
+    if (presence === 'idle') return 'ausente';
+    return presence === 'online' ? 'online' : 'offline';
+  }
+  private notifyMention(message: { author_id: number; author_username: string; content: string }): void {
+    if (!this.mentionNotifications() || document.hasFocus()) return;
+    if (message.author_id === this.user()?.id) return;
+    const username = this.user()?.username.toLowerCase();
+    const content = message.content.toLowerCase();
+    if (!username || !(content.includes('@' + username) || content.includes('@everyone'))) return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    new Notification(`${message.author_username} mencionou você`, { body: message.content.slice(0, 180), tag: `mention-${message.author_id}` });
   }
   protected legacyInlineParticipantMedia(): PeerMediaAvailability | undefined { return undefined; }
   protected isSpeaking(participant: VoiceParticipant): boolean { return this.speakingIDs().has(participant.identity); }
@@ -1831,6 +1864,11 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.lightboxImageURL()) {
       event.preventDefault();
       this.closeLightbox();
+      return;
+    }
+    if (this.accountMenuOpen()) {
+      event.preventDefault();
+      this.closeAccountMenu();
     }
   }
   protected voiceParticipantAvatarID(participant: VoiceParticipant): string | null {
@@ -1852,20 +1890,114 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const updatedUser = await window.desktop.auth.updateAvatar(avatarID);
       this.user.set(updatedUser);
-      this.applyAvatarUpdate(updatedUser.id, updatedUser.avatar_id);
+      this.applyProfileUpdate(updatedUser.id, { avatar_id: updatedUser.avatar_id });
     } catch (error) {
       this.error.set(this.messageFor(error, 'Não foi possível salvar o avatar.'));
     } finally {
       this.avatarSaving.set(false);
     }
   }
+  protected async saveProfile(profile: { username: string; email: string }): Promise<boolean> {
+    try {
+      const updatedUser = await window.desktop.auth.updateProfile(profile);
+      this.user.set(updatedUser);
+      this.applyProfileUpdate(updatedUser.id, { username: updatedUser.username, avatar_id: updatedUser.avatar_id });
+      return true;
+    } catch (error) {
+      this.error.set(this.messageFor(error, 'Não foi possível salvar o perfil.'));
+      return false;
+    }
+  }
+  protected async changePassword(currentPassword: string, newPassword: string): Promise<boolean> {
+    try {
+      await window.desktop.auth.changePassword(currentPassword, newPassword);
+      return true;
+    } catch (error) {
+      this.error.set(this.messageFor(error, 'Não foi possível alterar a senha.'));
+      return false;
+    }
+  }
+  private static readonly ACCENT_COLORS: Record<string, readonly [string, string]> = {
+    violet: ['#766cf6', '#8b83ff'],
+    blurple: ['#5865f2', '#6875f4'],
+    green: ['#23a55a', '#2ebd6b'],
+    pink: ['#eb459e', '#f468b4'],
+    orange: ['#f97316', '#fb8c3c'],
+  };
+  protected readonly accentOptions = Object.keys(AppComponent.ACCENT_COLORS);
+  private async loadAppearance(): Promise<void> {
+    try {
+      const settings = await window.desktop.settings.get();
+      this.mentionNotifications.set(settings.mentionNotifications);
+      this.accent.set(settings.appearance.accent);
+      this.fontScale.set(settings.appearance.fontScale);
+      this.density.set(settings.appearance.density);
+    } catch { /* Defaults remain until the user changes the setting. */ }
+    this.applyAppearance();
+  }
+  private applyAppearance(): void {
+    const [accent, accentHover] = AppComponent.ACCENT_COLORS[this.accent()] ?? AppComponent.ACCENT_COLORS['violet'];
+    this.host.nativeElement.style.setProperty('--accent', accent);
+    this.host.nativeElement.style.setProperty('--accent-hover', accentHover);
+    document.documentElement.style.fontSize = `${Math.round(this.fontScale() * 100)}%`;
+    this.host.nativeElement.classList.toggle('compact', this.density() === 'compact');
+  }
+  protected async selectAccent(accent: string): Promise<void> {
+    this.accent.set(accent);
+    this.applyAppearance();
+    try { await window.desktop.settings.setAppearance({ accent }); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+  }
+  protected async setFontScale(scale: number): Promise<void> {
+    this.fontScale.set(scale);
+    this.applyAppearance();
+    try { await window.desktop.settings.setAppearance({ fontScale: scale }); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+  }
+  protected async selectDensity(density: AppearanceDensity): Promise<void> {
+    if (this.density() === density) return;
+    this.density.set(density);
+    this.applyAppearance();
+    try { await window.desktop.settings.setAppearance({ density }); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+  }
+  protected async toggleMentionNotifications(enabled: boolean): Promise<void> {
+    this.mentionNotifications.set(enabled);
+    try { await window.desktop.settings.setMentionNotifications(enabled); }
+    catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
+  }
+  protected async setStatus(status: UserStatus): Promise<void> {
+    if (this.user()?.status === status) return;
+    this.user.update((user) => user ? { ...user, status } : user);
+    try {
+      const updatedUser = await window.desktop.auth.setStatus(status);
+      this.user.set(updatedUser);
+      this.applyProfileUpdate(updatedUser.id, { username: updatedUser.username, avatar_id: updatedUser.avatar_id, status: updatedUser.status });
+    } catch (error) {
+      this.error.set(this.messageFor(error, 'Não foi possível alterar o status.'));
+    }
+  }
+  protected toggleAccountMenu(): void {
+    this.accountMenuOpen.update((open) => !open);
+  }
+  protected closeAccountMenu(): void {
+    this.accountMenuOpen.set(false);
+  }
+  protected openSettingsFromAccountMenu(): void {
+    this.closeAccountMenu();
+    void this.openSettings();
+  }
+  protected ownStatusLabel(status: UserStatus): string {
+    if (status === 'idle') return 'Ausente';
+    if (status === 'invisible') return 'Invisível';
+    return 'Online';
+  }
   protected closeSettings(): void {
     this.stopMicTest();
     this.selectedAvatarID.set(this.user()?.avatar_id ?? null);
     this.settingsOpen.set(false);
   }
-  protected async toggleHardwareAcceleration(event: Event): Promise<void> {
-    const enabled = (event.target as HTMLInputElement).checked;
+  protected async toggleHardwareAcceleration(enabled: boolean): Promise<void> {
     this.hardwareAcceleration.set(enabled);
     try { this.hardwareAccelerationRestartRequired.set((await window.desktop.settings.setHardwareAcceleration(enabled)).restartRequired); }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to save the setting.')); }
