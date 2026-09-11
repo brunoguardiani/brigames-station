@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { AudioPresets, LocalAudioTrack, Room, RoomEvent, Track } from 'livekit-client';
 import type { AudioCaptureOptions } from 'livekit-client';
 import { deriveCallMiniPreviewModel, type CallMediaDescriptor } from './call-mini-preview-state';
-import { ParticipantAudioService, type ParticipantAudioPreference } from './participant-audio.service';
+import { ParticipantAudioService, type ParticipantAudioPreference, type ParticipantAudioSource } from './participant-audio.service';
 import { ParticipantContextMenuComponent } from './participant-context-menu.component';
 import { ScreenShareControlComponent } from './screen-share-control.component';
 import { SettingsComponent } from './settings.component';
@@ -226,10 +226,16 @@ export class AppComponent implements OnInit, OnDestroy {
       this.outputDeviceId.set(settings.outputDeviceId);
       this.outputVolume.set(settings.outputVolume);
       this.participantAudio.setOutput(settings.outputVolume, settings.outputDeviceId);
-      return settings.participantAudioPreferences;
+      return {
+        microphone: settings.participantAudioPreferences,
+        'screen-share': settings.screenShareAudioPreferences,
+      };
     },
-    save: (userID, preference) => window.desktop.settings.setParticipantAudio(userID, preference),
-  }, () => this.participantAudioRevision.update((revision) => revision + 1));
+    save: (userID, source, preference) => window.desktop.settings.setParticipantAudio(userID, source, preference),
+  }, () => {
+    this.participantAudioRevision.update((revision) => revision + 1);
+    this.refreshScreenShareAudioControls();
+  });
   private voiceAudioElements = new Map<string, ParticipantAudioElement>();
   private peerMediaElements: PeerMediaElement[] = [];
   private peerMediaAudioElements = new Map<string, ParticipantAudioElement>();
@@ -426,8 +432,8 @@ export class AppComponent implements OnInit, OnDestroy {
           const audioID = publication.trackSid;
           this.removeVoiceAudioElement(audioID);
           document.body.appendChild(audio);
-          this.voiceAudioElements.set(audioID, { userID: participant.identity, element: audio });
-          this.participantAudio.register(participant.identity, audio);
+          this.voiceAudioElements.set(audioID, { userID: participant.identity, source: 'microphone', element: audio });
+          this.participantAudio.register(participant.identity, 'microphone', audio);
           this.speakingDetector.register(participant.identity, track.mediaStreamTrack);
         }
       });
@@ -1166,15 +1172,22 @@ export class AppComponent implements OnInit, OnDestroy {
         const existingAudio = this.peerMediaAudioElements.get(audioID);
         if (existingAudio) {
           existingAudio.element.srcObject = stream;
-          this.participantAudio.register(existingAudio.userID, existingAudio.element);
+          this.participantAudio.register(existingAudio.userID, existingAudio.source, existingAudio.element);
         } else {
           const audio = document.createElement('audio');
           audio.autoplay = true; audio.srcObject = stream;
           document.body.appendChild(audio);
           const userID = String(remoteUserID);
-          this.peerMediaAudioElements.set(audioID, { userID, element: audio });
-          this.participantAudio.register(userID, audio);
+          const source: ParticipantAudioSource = kind === 'screen' ? 'screen-share' : 'microphone';
+          this.peerMediaAudioElements.set(audioID, { userID, source, element: audio });
+          this.participantAudio.register(userID, source, audio);
         }
+        this.participantAudioRevision.update((revision) => revision + 1);
+        if (kind === 'screen') this.refreshScreenShareAudioControls(remoteUserID);
+        event.track.addEventListener('ended', () => {
+          const current = this.peerMediaAudioElements.get(audioID)?.element.srcObject;
+          if (current instanceof MediaStream && current.getTracks().includes(event.track)) this.removePeerMediaAudioElement(audioID);
+        }, { once: true });
         return;
       }
       if (event.track.kind !== 'video') return;
@@ -1429,11 +1442,18 @@ export class AppComponent implements OnInit, OnDestroy {
       });
       element.append(effectButton);
     }
+    let screenShareAudioControl: ScreenShareAudioControl | undefined;
+    if (remoteMedia && kind === 'screen') {
+      screenShareAudioControl = this.createScreenShareAudioControl(remoteMedia.userID, remoteMedia.name);
+      element.append(screenShareAudioControl.element);
+    }
     if (remoteMedia) element.append(this.createStopWatchingOverlay(remoteMedia));
     this.peerMediaElements.push({
       id, element, video, label, highlightButton, previewButton, effectButton, kind,
+      screenShareAudioControl,
       participantIdentity: remoteMedia ? String(remoteMedia.userID) : this.voiceRoom?.localParticipant.identity ?? String(this.currentUserID()),
     });
+    if (remoteMedia && kind === 'screen') this.refreshScreenShareAudioControls(remoteMedia.userID);
     if (remoteMedia && this.selectedMedia()?.participantID === remoteMedia.userID && this.selectedMedia()?.source === kind) {
       this.featuredPeerMediaID.set(id);
       this.voiceMediaVisible.set(true);
@@ -1570,6 +1590,53 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     return icon;
   }
+  private createScreenShareAudioControl(userID: number, name: string): ScreenShareAudioControl {
+    const element = this.renderer.createElement('div') as HTMLElement;
+    element.className = 'screen-share-audio-control';
+    element.hidden = true;
+    element.setAttribute('role', 'group');
+    element.setAttribute('aria-label', `Volume da transmissão de ${name}`);
+    element.addEventListener('pointerdown', (event) => event.stopPropagation());
+    element.addEventListener('click', (event) => event.stopPropagation());
+
+    const muteButton = this.renderer.createElement('button') as HTMLButtonElement;
+    muteButton.type = 'button';
+    muteButton.className = 'screen-share-audio-mute';
+    muteButton.addEventListener('click', () => this.toggleScreenShareLocalMute(userID));
+
+    const slider = this.renderer.createElement('input') as HTMLInputElement;
+    slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '1';
+    slider.setAttribute('aria-label', `Volume da transmissão de ${name}`);
+    slider.addEventListener('keydown', (event) => event.stopPropagation());
+    slider.addEventListener('input', () => this.setScreenShareVolume(userID, Number(slider.value)));
+
+    const percentage = this.renderer.createElement('span') as HTMLSpanElement;
+    percentage.className = 'screen-share-audio-percentage';
+    element.append(muteButton, slider, percentage);
+    return { element, muteButton, slider, percentage };
+  }
+  private refreshScreenShareAudioControls(userID?: number): void {
+    for (const item of this.peerMediaElements) {
+      if (item.kind !== 'screen' || !item.screenShareAudioControl || !item.id.startsWith('remote:')) continue;
+      const itemUserID = Number(item.participantIdentity);
+      if (userID !== undefined && itemUserID !== userID) continue;
+      const control = item.screenShareAudioControl;
+      const hasAudio = this.peerMediaAudioElements.has(`remote:${itemUserID}:screen:audio`);
+      control.element.hidden = !hasAudio;
+      if (!hasAudio) continue;
+      const preference = this.participantAudio.getPreference(String(itemUserID), 'screen-share');
+      const percentage = Math.round(preference.volume * 100);
+      control.slider.value = String(percentage);
+      control.percentage.textContent = `${percentage}%`;
+      const silent = preference.muted || percentage === 0;
+      control.muteButton.classList.toggle('muted', preference.muted);
+      control.muteButton.title = preference.muted ? 'Ouvir transmissão novamente' : 'Silenciar transmissão para mim';
+      control.muteButton.setAttribute('aria-label', `${control.muteButton.title} (${percentage}%)`);
+      control.muteButton.replaceChildren(this.createSVGIcon(silent
+        ? ['M11 5 6 9H2v6h4l5 4Z', 'm16 9 5 5', 'm21 9-5 5']
+        : ['M11 5 6 9H2v6h4l5 4Z', 'M15.5 8.5a5 5 0 0 1 0 7', 'M19 5a10 10 0 0 1 0 14']));
+    }
+  }
   private createStopWatchingOverlay(media: PeerMediaAvailability): HTMLElement {
     const controls = this.renderer.createElement('div') as HTMLElement;
     controls.className = 'voice-media-controls';
@@ -1696,7 +1763,15 @@ export class AppComponent implements OnInit, OnDestroy {
   protected selectedMediaForParticipant(userID: number): SelectedMediaSource | null { return selectedMediaSourceForParticipant(this.selectedMedia(), userID); }
   protected participantAudioPreference(userID: number): ParticipantAudioPreference {
     this.participantAudioRevision();
-    return this.participantAudio.getPreference(String(userID));
+    return this.participantAudio.getPreference(String(userID), 'microphone');
+  }
+  protected screenShareAudioPreference(userID: number): ParticipantAudioPreference {
+    this.participantAudioRevision();
+    return this.participantAudio.getPreference(String(userID), 'screen-share');
+  }
+  protected hasScreenShareAudio(userID: number): boolean {
+    this.participantAudioRevision();
+    return this.peerMediaAudioElements.has(`remote:${userID}:screen:audio`);
   }
   protected openParticipantContextMenu(event: MouseEvent | KeyboardEvent, member: ServerMember, channelID: number): void {
     if (this.isCurrentVoiceMember(member) || this.voiceChannel()?.id !== channelID) return;
@@ -1717,13 +1792,20 @@ export class AppComponent implements OnInit, OnDestroy {
   protected toggleParticipantAudioMenu(_userID: number): void { /* Replaced by the participant context menu. */ }
   protected closeParticipantContextMenu(): void { this.participantContextMenu.set(null); }
   protected setParticipantVolume(userID: number, volumePercent: number): void {
-    this.participantAudio.setVolume(String(userID), volumePercent / 100);
+    this.participantAudio.setVolume(String(userID), 'microphone', volumePercent / 100);
   }
   protected toggleParticipantLocalMute(userID: number): void {
-    const preference = this.participantAudio.getPreference(String(userID));
-    this.participantAudio.setMuted(String(userID), !preference.muted);
+    const preference = this.participantAudio.getPreference(String(userID), 'microphone');
+    this.participantAudio.setMuted(String(userID), 'microphone', !preference.muted);
   }
-  protected resetParticipantVolume(userID: number): void { this.participantAudio.reset(String(userID)); }
+  protected resetParticipantVolume(userID: number): void { this.participantAudio.reset(String(userID), 'microphone'); }
+  protected setScreenShareVolume(userID: number, volumePercent: number): void {
+    this.participantAudio.setVolume(String(userID), 'screen-share', volumePercent / 100);
+  }
+  protected toggleScreenShareLocalMute(userID: number): void {
+    const preference = this.participantAudio.getPreference(String(userID), 'screen-share');
+    this.participantAudio.setMuted(String(userID), 'screen-share', !preference.muted);
+  }
   protected selectParticipantMedia(userID: number, channelID: number, kind: PeerMediaKind): void {
     const media = kind === 'screen' ? this.screenShareForMember(userID, channelID) : this.cameraForMember(userID, channelID);
     this.closeParticipantContextMenu();
@@ -1750,7 +1832,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private removeVoiceAudioElement(audioID: string): void {
     const audio = this.voiceAudioElements.get(audioID);
     if (!audio) return;
-    this.participantAudio.unregister(audio.userID, audio.element);
+    this.participantAudio.unregister(audio.userID, audio.source, audio.element);
     audio.element.remove();
     this.voiceAudioElements.delete(audioID);
   }
@@ -1763,9 +1845,12 @@ export class AppComponent implements OnInit, OnDestroy {
   private removePeerMediaAudioElement(audioID: string): void {
     const audio = this.peerMediaAudioElements.get(audioID);
     if (!audio) return;
-    this.participantAudio.unregister(audio.userID, audio.element);
+    this.participantAudio.unregister(audio.userID, audio.source, audio.element);
     audio.element.remove();
     this.peerMediaAudioElements.delete(audioID);
+    this.participantAudioRevision.update((revision) => revision + 1);
+    const match = /^remote:(\d+):screen:audio$/.exec(audioID);
+    if (match) this.refreshScreenShareAudioControls(Number(match[1]));
   }
   private playVoiceSound(event: 'join' | 'leave' | 'mute' | 'unmute'): void {
     const context = this.voiceAudioContext ??= new AudioContext();
@@ -2064,10 +2149,11 @@ type PeerDirection = 'incoming' | 'outgoing';
 type PeerSignalKind = 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch';
 type IncomingPeerSignal = { channel_id: number; from_user_id: number; kind: PeerSignalKind; session_id?: string; payload: unknown };
 type PeerMediaAvailability = { channelID: number; userID: number; name: string; kind: PeerMediaKind };
-type ParticipantAudioElement = { userID: string; element: HTMLAudioElement };
+type ParticipantAudioElement = { userID: string; source: ParticipantAudioSource; element: HTMLAudioElement };
 type PeerMediaConnection = { sessionID: string; connection: RTCPeerConnection; direction: PeerDirection; remoteUserID: number; kind: PeerMediaKind; pendingCandidates: RTCIceCandidateInit[]; disconnectTimer?: ReturnType<typeof setTimeout>; iceRestartTimer?: ReturnType<typeof setTimeout>; iceRestarts: number };
 type PendingPeerCandidates = { remoteUserID: number; kind: PeerMediaKind; candidates: RTCIceCandidateInit[] };
-type PeerMediaElement = { id: string; element: HTMLElement; video: HTMLVideoElement; label: HTMLSpanElement; highlightButton: HTMLButtonElement; previewButton?: HTMLButtonElement; effectButton?: HTMLButtonElement; kind: PeerMediaKind; participantIdentity: string };
+type ScreenShareAudioControl = { element: HTMLElement; muteButton: HTMLButtonElement; slider: HTMLInputElement; percentage: HTMLSpanElement };
+type PeerMediaElement = { id: string; element: HTMLElement; video: HTMLVideoElement; label: HTMLSpanElement; highlightButton: HTMLButtonElement; previewButton?: HTMLButtonElement; effectButton?: HTMLButtonElement; screenShareAudioControl?: ScreenShareAudioControl; kind: PeerMediaKind; participantIdentity: string };
 type CameraEffectPipeline = { source: MediaStream; video: HTMLVideoElement; canvas: HTMLCanvasElement; context: CanvasRenderingContext2D; running: boolean };
 type CameraEffectID = 'none' | 'grayscale' | 'sepia' | 'invert' | 'vintage' | 'cold';
 

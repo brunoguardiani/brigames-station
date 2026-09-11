@@ -1,9 +1,11 @@
 export type ParticipantAudioPreference = { volume: number; muted: boolean };
 export type ParticipantAudioPreferences = Record<string, ParticipantAudioPreference>;
+export type ParticipantAudioSource = 'microphone' | 'screen-share';
+export type ParticipantAudioPreferencesBySource = Record<ParticipantAudioSource, ParticipantAudioPreferences>;
 
 export type ParticipantAudioPreferenceStorage = {
-  load(): Promise<ParticipantAudioPreferences>;
-  save(userID: string, preference: ParticipantAudioPreference | null): Promise<void>;
+  load(): Promise<ParticipantAudioPreferencesBySource>;
+  save(userID: string, source: ParticipantAudioSource, preference: ParticipantAudioPreference | null): Promise<void>;
 };
 
 type AudioOutputElement = Pick<HTMLAudioElement, 'volume' | 'setSinkId'>;
@@ -13,7 +15,7 @@ const defaultPreference: ParticipantAudioPreference = { volume: 1, muted: false 
 export class ParticipantAudioService {
   private readonly preferences = new Map<string, ParticipantAudioPreference>();
   private readonly elements = new Map<string, Set<AudioOutputElement>>();
-  private readonly pendingPersistence = new Map<string, ParticipantAudioPreference | null>();
+  private readonly pendingPersistence = new Map<string, { userID: string; source: ParticipantAudioSource; preference: ParticipantAudioPreference | null }>();
   private persistenceTimer?: ReturnType<typeof setTimeout>;
   private outputVolume = 1;
   private outputDeviceID: string | null = null;
@@ -27,28 +29,32 @@ export class ParticipantAudioService {
   async restore(): Promise<void> {
     const saved = await this.storage.load();
     this.preferences.clear();
-    for (const [userID, preference] of Object.entries(saved)) {
-      this.preferences.set(userID, normalizedPreference(preference));
+    for (const source of audioSources) {
+      for (const [userID, preference] of Object.entries(saved[source])) {
+        this.preferences.set(audioKey(userID, source), normalizedPreference(preference));
+      }
     }
     this.applyAll();
     this.onChange();
   }
 
-  getPreference(userID: string): ParticipantAudioPreference {
-    return { ...(this.preferences.get(userID) ?? defaultPreference) };
+  getPreference(userID: string, source: ParticipantAudioSource = 'microphone'): ParticipantAudioPreference {
+    return { ...(this.preferences.get(audioKey(userID, source)) ?? defaultPreference) };
   }
 
-  register(userID: string, element: AudioOutputElement): void {
-    const elements = this.elements.get(userID) ?? new Set<AudioOutputElement>();
+  register(userID: string, source: ParticipantAudioSource, element: AudioOutputElement): void {
+    const key = audioKey(userID, source);
+    const elements = this.elements.get(key) ?? new Set<AudioOutputElement>();
     elements.add(element);
-    this.elements.set(userID, elements);
-    this.apply(userID, element);
+    this.elements.set(key, elements);
+    this.apply(userID, source, element);
   }
 
-  unregister(userID: string, element: AudioOutputElement): void {
-    const elements = this.elements.get(userID);
+  unregister(userID: string, source: ParticipantAudioSource, element: AudioOutputElement): void {
+    const key = audioKey(userID, source);
+    const elements = this.elements.get(key);
     elements?.delete(element);
-    if (elements?.size === 0) this.elements.delete(userID);
+    if (elements?.size === 0) this.elements.delete(key);
   }
 
   setOutput(volume: number, deviceID: string | null): void {
@@ -57,41 +63,41 @@ export class ParticipantAudioService {
     this.applyAll();
   }
 
-  setVolume(userID: string, volume: number): void {
-    const current = this.getPreference(userID);
-    this.updatePreference(userID, { ...current, volume: clampedVolume(volume) });
+  setVolume(userID: string, source: ParticipantAudioSource, volume: number): void {
+    const current = this.getPreference(userID, source);
+    this.updatePreference(userID, source, { ...current, volume: clampedVolume(volume) });
   }
 
-  setMuted(userID: string, muted: boolean): void {
-    const current = this.getPreference(userID);
-    this.updatePreference(userID, { ...current, muted });
+  setMuted(userID: string, source: ParticipantAudioSource, muted: boolean): void {
+    const current = this.getPreference(userID, source);
+    this.updatePreference(userID, source, { ...current, muted });
   }
 
-  reset(userID: string): void {
-    this.preferences.delete(userID);
-    this.applyUser(userID);
-    this.schedulePersistence(userID, null);
+  reset(userID: string, source: ParticipantAudioSource): void {
+    this.preferences.delete(audioKey(userID, source));
+    this.applyUser(userID, source);
+    this.schedulePersistence(userID, source, null);
     this.onChange();
   }
 
   async flushPersistence(): Promise<void> {
     if (this.persistenceTimer) clearTimeout(this.persistenceTimer);
     this.persistenceTimer = undefined;
-    const pending = [...this.pendingPersistence.entries()];
+    const pending = [...this.pendingPersistence.values()];
     this.pendingPersistence.clear();
-    await Promise.all(pending.map(([userID, preference]) => this.storage.save(userID, preference)));
+    await Promise.all(pending.map(({ userID, source, preference }) => this.storage.save(userID, source, preference)));
   }
 
-  private updatePreference(userID: string, preference: ParticipantAudioPreference): void {
+  private updatePreference(userID: string, source: ParticipantAudioSource, preference: ParticipantAudioPreference): void {
     const normalized = normalizedPreference(preference);
-    this.preferences.set(userID, normalized);
-    this.applyUser(userID);
-    this.schedulePersistence(userID, normalized);
+    this.preferences.set(audioKey(userID, source), normalized);
+    this.applyUser(userID, source);
+    this.schedulePersistence(userID, source, normalized);
     this.onChange();
   }
 
-  private schedulePersistence(userID: string, preference: ParticipantAudioPreference | null): void {
-    this.pendingPersistence.set(userID, preference);
+  private schedulePersistence(userID: string, source: ParticipantAudioSource, preference: ParticipantAudioPreference | null): void {
+    this.pendingPersistence.set(audioKey(userID, source), { userID, source, preference });
     if (this.persistenceTimer) clearTimeout(this.persistenceTimer);
     this.persistenceTimer = setTimeout(() => {
       this.persistenceTimer = undefined;
@@ -100,18 +106,33 @@ export class ParticipantAudioService {
   }
 
   private applyAll(): void {
-    for (const userID of this.elements.keys()) this.applyUser(userID);
+    for (const key of this.elements.keys()) {
+      const parsed = parseAudioKey(key);
+      if (parsed) this.applyUser(parsed.userID, parsed.source);
+    }
   }
 
-  private applyUser(userID: string): void {
-    for (const element of this.elements.get(userID) ?? []) this.apply(userID, element);
+  private applyUser(userID: string, source: ParticipantAudioSource): void {
+    for (const element of this.elements.get(audioKey(userID, source)) ?? []) this.apply(userID, source, element);
   }
 
-  private apply(userID: string, element: AudioOutputElement): void {
-    const preference = this.getPreference(userID);
+  private apply(userID: string, source: ParticipantAudioSource, element: AudioOutputElement): void {
+    const preference = this.getPreference(userID, source);
     element.volume = preference.muted ? 0 : clampedVolume(this.outputVolume * preference.volume);
     if (this.outputDeviceID) void element.setSinkId(this.outputDeviceID).catch(() => undefined);
   }
+}
+
+const audioSources: ParticipantAudioSource[] = ['microphone', 'screen-share'];
+
+function audioKey(userID: string, source: ParticipantAudioSource): string { return `${source}:${userID}`; }
+
+function parseAudioKey(key: string): { userID: string; source: ParticipantAudioSource } | null {
+  for (const source of audioSources) {
+    const prefix = `${source}:`;
+    if (key.startsWith(prefix)) return { source, userID: key.slice(prefix.length) };
+  }
+  return null;
 }
 
 function clampedVolume(volume: number): number {
