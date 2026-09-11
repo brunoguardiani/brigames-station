@@ -105,13 +105,93 @@ func registerIdentityRoutes(router *gin.Engine, service *identity.Service, token
 			errorResponse(context, http.StatusInternalServerError, "avatar_update_failed", "Unable to update avatar.")
 			return
 		}
+		context.JSON(http.StatusOK, user)
+	})
+	router.PATCH("/me/profile", requireJWT(tokens), func(context *gin.Context) {
+		userID, ok := authenticatedUserID(context)
+		if !ok {
+			errorResponse(context, http.StatusUnauthorized, "invalid_access_token", "Access token is missing, invalid, or expired.")
+			return
+		}
+		var request struct {
+			Username *string `json:"username"`
+			Email    *string `json:"email"`
+		}
+		if context.ShouldBindJSON(&request) != nil {
+			errorResponse(context, http.StatusBadRequest, "validation_error", "Request body must be valid JSON.")
+			return
+		}
+		user, err := service.UpdateProfile(context.Request.Context(), userID, request.Username, request.Email)
+		if err == identity.ErrConflict {
+			errorResponse(context, http.StatusConflict, "identity_conflict", "Username or email is already in use.")
+			return
+		}
+		if err != nil {
+			errorResponse(context, http.StatusBadRequest, "validation_error", err.Error())
+			return
+		}
 		if serverService != nil && hub != nil {
 			memberIDs, err := serverService.SharedMemberIDs(context.Request.Context(), userID)
 			if err == nil {
-				hub.Publish(memberIDs, realtime.Event{Type: "profile.updated", Data: map[string]any{"user_id": userID, "avatar_id": user.AvatarID}})
+				hub.Publish(memberIDs, realtime.Event{Type: "profile.updated", Data: map[string]any{"user_id": userID, "username": user.Username, "avatar_id": user.AvatarID}})
 			}
 		}
 		context.JSON(http.StatusOK, user)
+	})
+	router.PATCH("/me/status", requireJWT(tokens), func(context *gin.Context) {
+		userID, ok := authenticatedUserID(context)
+		if !ok {
+			errorResponse(context, http.StatusUnauthorized, "invalid_access_token", "Access token is missing, invalid, or expired.")
+			return
+		}
+		var request struct {
+			Status string `json:"status"`
+		}
+		if context.ShouldBindJSON(&request) != nil {
+			errorResponse(context, http.StatusBadRequest, "validation_error", "Request body must be valid JSON.")
+			return
+		}
+		user, err := service.UpdateStatus(context.Request.Context(), userID, request.Status)
+		if err == identity.ErrInvalidStatus {
+			errorResponse(context, http.StatusBadRequest, "invalid_status", "Status is not available.")
+			return
+		}
+		if err != nil {
+			errorResponse(context, http.StatusInternalServerError, "status_update_failed", "Unable to update status.")
+			return
+		}
+		if serverService != nil && hub != nil {
+			memberIDs, err := serverService.SharedMemberIDs(context.Request.Context(), userID)
+			if err == nil {
+				hub.Publish(memberIDs, realtime.Event{Type: "profile.updated", Data: map[string]any{"user_id": userID, "username": user.Username, "avatar_id": user.AvatarID, "status": user.Status}})
+			}
+		}
+		context.JSON(http.StatusOK, user)
+	})
+	router.PATCH("/me/password", requireJWT(tokens), func(context *gin.Context) {
+		userID, ok := authenticatedUserID(context)
+		if !ok {
+			errorResponse(context, http.StatusUnauthorized, "invalid_access_token", "Access token is missing, invalid, or expired.")
+			return
+		}
+		var request struct {
+			CurrentPassword string `json:"current_password"`
+			NewPassword     string `json:"new_password"`
+		}
+		if context.ShouldBindJSON(&request) != nil {
+			errorResponse(context, http.StatusBadRequest, "validation_error", "Request body must be valid JSON.")
+			return
+		}
+		err := service.UpdatePassword(context.Request.Context(), userID, request.CurrentPassword, request.NewPassword)
+		if err == identity.ErrInvalidCredentials {
+			errorResponse(context, http.StatusUnauthorized, "invalid_current_password", "Current password is incorrect.")
+			return
+		}
+		if err != nil {
+			errorResponse(context, http.StatusBadRequest, "validation_error", err.Error())
+			return
+		}
+		context.Status(http.StatusNoContent)
 	})
 }
 

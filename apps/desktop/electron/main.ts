@@ -15,7 +15,14 @@ const debugEnabled = process.argv.includes('--debug') || process.env['BRIGAMES_D
 
 type ParticipantAudioPreference = { volume: number; muted: boolean };
 type ParticipantAudioSource = 'microphone' | 'screen-share';
-type AppSettings = { hardwareAcceleration: boolean; noiseFilter: boolean; noiseFilterMode: 'standard' | 'advanced'; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; participantAudioPreferences: Record<string, ParticipantAudioPreference>; screenShareAudioPreferences: Record<string, ParticipantAudioPreference> };
+type AppSettings = { hardwareAcceleration: boolean; noiseFilter: boolean; noiseFilterMode: 'standard' | 'advanced'; inputVolumeDb: number; inputDeviceId: string | null; outputDeviceId: string | null; outputVolume: number; mentionNotifications: boolean; appearance: { accent: string; fontScale: number; density: 'cozy' | 'compact' }; participantAudioPreferences: Record<string, ParticipantAudioPreference>; screenShareAudioPreferences: Record<string, ParticipantAudioPreference> };
+type Appearance = AppSettings['appearance'];
+const ACCENT_PRESETS = new Set(['violet', 'blurple', 'green', 'pink', 'orange']);
+function parseAppearance(raw: unknown): Appearance {
+  const rawAppearance = typeof raw === 'object' && raw !== null ? raw as Partial<Appearance> : {};
+  const fontScale = typeof rawAppearance.fontScale === 'number' && Number.isFinite(rawAppearance.fontScale) ? Math.min(1.15, Math.max(0.9, rawAppearance.fontScale)) : 1;
+  return { accent: typeof rawAppearance.accent === 'string' && ACCENT_PRESETS.has(rawAppearance.accent) ? rawAppearance.accent : 'violet', fontScale, density: rawAppearance.density === 'compact' ? 'compact' : 'cozy' };
+}
 function desktopAppVersion(): string {
   try {
     const version = (JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { version?: string }).version;
@@ -46,11 +53,13 @@ function readSettings(): AppSettings {
       inputDeviceId: typeof raw.inputDeviceId === 'string' && raw.inputDeviceId ? raw.inputDeviceId : null,
       outputDeviceId: typeof raw.outputDeviceId === 'string' && raw.outputDeviceId ? raw.outputDeviceId : null,
       outputVolume: typeof raw.outputVolume === 'number' && Number.isFinite(raw.outputVolume) ? Math.min(2, Math.max(0, raw.outputVolume)) : 1,
+      mentionNotifications: raw.mentionNotifications !== false,
+      appearance: parseAppearance(raw.appearance),
       participantAudioPreferences: participantAudioPreferences(raw.participantAudioPreferences),
       screenShareAudioPreferences: participantAudioPreferences(raw.screenShareAudioPreferences),
     };
   } catch {
-    return { hardwareAcceleration: true, noiseFilter: true, noiseFilterMode: 'standard', inputVolumeDb: 0, inputDeviceId: null, outputDeviceId: null, outputVolume: 1, participantAudioPreferences: {}, screenShareAudioPreferences: {} };
+    return { hardwareAcceleration: true, noiseFilter: true, noiseFilterMode: 'standard', inputVolumeDb: 0, inputDeviceId: null, outputDeviceId: null, outputVolume: 1, mentionNotifications: true, appearance: { accent: 'violet', fontScale: 1, density: 'cozy' }, participantAudioPreferences: {}, screenShareAudioPreferences: {} };
   }
 }
 function writeSettings(settings: AppSettings): void {
@@ -142,17 +151,17 @@ function isTrustedRendererURL(url: string): boolean {
   }
 }
 
-type User = { id: number; username: string; email: string; role: string; avatar_id: string | null };
+type User = { id: number; username: string; email: string; role: string; avatar_id: string | null; status?: 'online' | 'idle' | 'invisible' };
 type Tokens = { access_token: string; refresh_token: string; expires_in: number };
 type Server = { id: number; name: string; description: string; created_by: number; membership_role: 'owner' | 'member'; created_at: string };
-type ServerMember = { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; voice_channel_id: number | null };
+type ServerMember = { id: number; username: string; role: 'owner' | 'member'; avatar_id: string | null; online: boolean; status?: 'online' | 'idle' | 'invisible' | 'offline'; voice_channel_id: number | null };
 type Channel = { id: number; server_id: number; name: string; type: 'text' | 'voice'; position: number; created_by: number; created_at: string };
 type Message = { id: number; channel_id: number; author_id: number; author_username: string; author_avatar_id: string | null; content: string; created_at: string };
 type MessagePage = { messages: Message[]; next_before: number | null };
 type DisplaySourceCategory = 'window' | 'screen' | 'application';
 type DisplaySource = { id: string; name: string; thumbnail: string; icon?: string; kind: 'screen' | 'window'; category: DisplaySourceCategory };
 type VoicePresenceChanged = { server_id: number; user_id: number; channel_id: number | null; started_at?: string | null; muted?: boolean; camera?: boolean; screen?: boolean };
-type ProfileUpdated = { user_id: number; avatar_id: string | null };
+type ProfileUpdated = { user_id: number; username?: string; avatar_id?: string | null; status?: 'online' | 'idle' | 'invisible' };
 type WebRTCSignalKind = 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch';
 type WebRTCSignal = { channel_id: number; to_user_id: number; kind: WebRTCSignalKind; session_id?: string; payload: unknown };
 type IncomingWebRTCSignal = Omit<WebRTCSignal, 'to_user_id'> & { from_user_id: number };
@@ -553,6 +562,24 @@ ipcMain.handle('settings:set-audio', (_event, patch: unknown): AppSettings => {
   writeSettings(appSettings);
   return { ...appSettings };
 });
+ipcMain.handle('settings:set-mention-notifications', (_event, enabled: unknown): void => {
+  if (typeof enabled !== 'boolean') throw new Error('Invalid notifications setting.');
+  appSettings.mentionNotifications = enabled;
+  writeSettings(appSettings);
+});
+ipcMain.handle('settings:set-appearance', (_event, patch: unknown): void => {
+  if (typeof patch !== 'object' || patch === null) throw new Error('Invalid appearance patch.');
+  const { accent, fontScale, density } = patch as { accent?: unknown; fontScale?: unknown; density?: unknown };
+  if (accent !== undefined && (typeof accent !== 'string' || !ACCENT_PRESETS.has(accent))) throw new Error('Invalid accent.');
+  if (fontScale !== undefined && (typeof fontScale !== 'number' || !Number.isFinite(fontScale) || fontScale < 0.9 || fontScale > 1.15)) throw new Error('Invalid font scale.');
+  if (density !== undefined && density !== 'cozy' && density !== 'compact') throw new Error('Invalid density.');
+  appSettings.appearance = { ...appSettings.appearance, ...(accent !== undefined ? { accent } : {}), ...(fontScale !== undefined ? { fontScale } : {}), ...(density !== undefined ? { density } : {}) };
+  writeSettings(appSettings);
+});
+ipcMain.handle('auth:set-status', (_event, status: unknown): Promise<User> => {
+  if (status !== 'online' && status !== 'idle' && status !== 'invisible') throw new Error('Status inválido.');
+  return authenticatedRequest<User>('/me/status', 'PATCH', { status });
+});
 ipcMain.handle('settings:set-participant-audio', (_event, userID: unknown, source: unknown, preference: unknown): void => {
   if (typeof userID !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(userID)) throw new Error('Invalid participant ID.');
   if (source !== 'microphone' && source !== 'screen-share') throw new Error('Invalid participant audio source.');
@@ -613,6 +640,18 @@ ipcMain.handle('auth:current-session', async (): Promise<User | null> => {
 ipcMain.handle('auth:update-avatar', (_event, avatarID: unknown): Promise<User> => {
   if (avatarID !== null && (typeof avatarID !== 'string' || !/^icon_(0[1-9]|[1-9][0-9]{1,2})$/.test(avatarID))) throw new Error('Invalid avatar.');
   return authenticatedRequest<User>('/me/avatar', 'PATCH', { avatar_id: avatarID as string | null });
+});
+ipcMain.handle('auth:update-profile', (_event, profile: unknown): Promise<User> => {
+  if (typeof profile !== 'object' || profile === null) throw new Error('Invalid profile.');
+  const { username, email } = profile as { username?: unknown; email?: unknown };
+  if (username !== undefined && (typeof username !== 'string' || username.trim().length < 3 || username.trim().length > 32)) throw new Error('O nome de usuário deve ter entre 3 e 32 caracteres.');
+  if (email !== undefined && (typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim()))) throw new Error('Informe um e-mail válido.');
+  return authenticatedRequest<User>('/me/profile', 'PATCH', { ...(username !== undefined ? { username: (username as string).trim() } : {}), ...(email !== undefined ? { email: (email as string).trim() } : {}) });
+});
+ipcMain.handle('auth:change-password', async (_event, currentPassword: unknown, newPassword: unknown): Promise<void> => {
+  if (typeof currentPassword !== 'string' || !currentPassword) throw new Error('Informe a senha atual.');
+  if (typeof newPassword !== 'string' || newPassword.length < 12) throw new Error('A nova senha deve ter pelo menos 12 caracteres.');
+  await authenticatedRequest<void>('/me/password', 'PATCH', { current_password: currentPassword, new_password: newPassword });
 });
 ipcMain.handle('auth:logout', async (): Promise<void> => {
   const refreshToken = await loadRefreshToken();

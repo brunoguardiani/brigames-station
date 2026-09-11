@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('desktop', {
     register: (username: string, email: string, password: string) => ipcRenderer.invoke('auth:register', username, email, password),
     currentSession: () => ipcRenderer.invoke('auth:current-session'),
     updateAvatar: (avatarID: string | null) => ipcRenderer.invoke('auth:update-avatar', avatarID),
+    updateProfile: (profile: { username?: string; email?: string }) => ipcRenderer.invoke('auth:update-profile', profile),
+    changePassword: (currentPassword: string, newPassword: string) => ipcRenderer.invoke('auth:change-password', currentPassword, newPassword),
+    setStatus: (status: 'online' | 'idle' | 'invisible') => ipcRenderer.invoke('auth:set-status', status),
     logout: () => ipcRenderer.invoke('auth:logout'),
     onSessionExpired: (callback: () => void): (() => void) => {
       const listener = () => callback();
@@ -57,6 +60,8 @@ contextBridge.exposeInMainWorld('desktop', {
     setHardwareAcceleration: (enabled: boolean): Promise<{ restartRequired: boolean }> => ipcRenderer.invoke('settings:set-hardware-acceleration', enabled),
     setNoiseFilter: (enabled: boolean): Promise<void> => ipcRenderer.invoke('settings:set-noise-filter', enabled),
     setNoiseFilterMode: (mode: 'standard' | 'advanced'): Promise<void> => ipcRenderer.invoke('settings:set-noise-filter-mode', mode),
+    setMentionNotifications: (enabled: boolean): Promise<void> => ipcRenderer.invoke('settings:set-mention-notifications', enabled),
+    setAppearance: (patch: { accent?: string; fontScale?: number; density?: 'cozy' | 'compact' }): Promise<void> => ipcRenderer.invoke('settings:set-appearance', patch),
     setAudio: (patch: { inputVolumeDb?: number; inputDeviceId?: string | null; outputDeviceId?: string | null; outputVolume?: number }): Promise<void> => ipcRenderer.invoke('settings:set-audio', patch),
     setParticipantAudio: (userID: string, source: 'microphone' | 'screen-share', preference: { volume: number; muted: boolean } | null): Promise<void> => ipcRenderer.invoke('settings:set-participant-audio', userID, source, preference),
   },

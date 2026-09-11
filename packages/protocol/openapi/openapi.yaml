@@ -164,6 +164,75 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /me/profile:
+    patch:
+      summary: Update the authenticated user's profile
+      description: Updates the username and email. Omitted fields keep their current values.
+      operationId: updateCurrentUserProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /me/status:
+    patch:
+      summary: Update the authenticated user's status
+      operationId: updateCurrentUserStatus
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: Status updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/password:
+    patch:
+      summary: Change the authenticated user's password
+      description: Verifies the current password before storing the new one.
+      operationId: changeCurrentUserPassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /servers:
     get:
       summary: List the authenticated user's servers
@@ -603,6 +672,32 @@ components:
         avatar_id:
           type: [string, 'null']
           pattern: '^icon_(0[1-9]|[1-9][0-9]{1,2})$'
+    UpdateProfileRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+        email:
+          type: string
+          format: email
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+          minLength: 12
+    UpdateStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [online, idle, invisible]
     CreateServerRequest:
       type: object
       required: [name]
@@ -678,6 +773,7 @@ components:
         username: { type: string }
         role: { type: string, enum: [owner, member] }
         avatar_id: { type: [string, 'null'], pattern: '^icon_(0[1-9]|[1-9][0-9]{1,2})$' }
+        status: { type: string, enum: [online, idle, invisible, offline] }
         online: { type: boolean }
         voice_channel_id:
           type: [integer, 'null']

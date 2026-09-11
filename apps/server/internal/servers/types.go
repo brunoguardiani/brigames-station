@@ -37,4 +37,5 @@ type Member struct {
 	Username string  `json:"username"`
 	Role     string  `json:"role"`
 	AvatarID *string `json:"avatar_id"`
+	Status   string  `json:"status"`
 }

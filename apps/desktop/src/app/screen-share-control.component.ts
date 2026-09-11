@@ -19,11 +19,11 @@ import { ChangeDetectionStrategy, Component, ElementRef, EventEmitter, HostListe
     }
   `,
   styles: `
-    :host{position:relative;display:block}
+    :host{position:relative;display:block;width:100%;height:100%}
     button{font:inherit;border:0;cursor:pointer}
     button:focus-visible{outline:2px solid #a59eff;outline-offset:2px}
     button:disabled{cursor:wait;opacity:.5}
-    .screen-share-control{display:grid;place-items:center;width:2.2rem;height:2.2rem;padding:.55rem;border-radius:.45rem;color:var(--muted);background:var(--raised)}
+    .screen-share-control{display:grid;place-items:center;box-sizing:border-box;width:100%;height:100%;padding:.55rem;border-radius:.45rem;color:var(--muted);background:var(--raised)}
     .screen-share-control:hover{color:var(--text);background:var(--hover)}
     .screen-share-control.active{color:#fff;background:var(--accent)}
     svg{width:1.1rem;height:1.1rem}
