@@ -77,8 +77,12 @@ func registerIdentityRoutes(router *gin.Engine, service *identity.Service, token
 			return
 		}
 		user, err := service.CurrentUser(context.Request.Context(), userID)
-		if err != nil {
+		if err == identity.ErrInvalidCredentials {
 			errorResponse(context, http.StatusUnauthorized, "invalid_access_token", "Access token is missing, invalid, or expired.")
+			return
+		}
+		if err != nil {
+			errorResponse(context, http.StatusInternalServerError, "current_user_failed", "Unable to load the current user.")
 			return
 		}
 		context.JSON(http.StatusOK, user)
