@@ -69,6 +69,7 @@ interface Window {
       onPresenceChanged(callback: (presence: { user_id: number; online: boolean }) => void): () => void;
       onVoicePresenceChanged(callback: (presence: { server_id: number; user_id: number; channel_id: number | null; started_at?: string | null; muted?: boolean; camera?: boolean; screen?: boolean }) => void): () => void;
       onProfileUpdated(callback: (profile: { user_id: number; username?: string; avatar_id?: string | null; status?: 'online' | 'idle' | 'invisible' }) => void): () => void;
+      onServerMemberJoined(callback: (membership: { server_id: number; user_id: number }) => void): () => void;
       sendWebRTCSignal(signal: { channel_id: number; to_user_id: number; kind: 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch'; session_id?: string; payload: unknown }): Promise<void>;
       onWebRTCSignal(callback: (signal: { channel_id: number; from_user_id: number; kind: 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch'; session_id?: string; payload: unknown }) => void): () => void;
     };

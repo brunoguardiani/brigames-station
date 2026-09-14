@@ -3,13 +3,15 @@ package httpserver
 import (
 	"brigames-station/internal/auth"
 	"brigames-station/internal/invites"
+	"brigames-station/internal/realtime"
+	"brigames-station/internal/servers"
 	"errors"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"strconv"
 )
 
-func registerInviteRoutes(r *gin.Engine, s *invites.Service, t *auth.TokenManager) {
+func registerInviteRoutes(r *gin.Engine, s *invites.Service, t *auth.TokenManager, serverService *servers.Service, hub *realtime.Hub) {
 	p := r.Group("/servers")
 	p.Use(requireJWT(t))
 	p.POST("/:serverId/invites", func(c *gin.Context) {
@@ -47,6 +49,11 @@ func registerInviteRoutes(r *gin.Engine, s *invites.Service, t *auth.TokenManage
 		if e != nil {
 			inviteError(c, e)
 			return
+		}
+		if serverService != nil && hub != nil {
+			if memberIDs, listErr := serverService.MemberIDs(c.Request.Context(), sid); listErr == nil {
+				hub.Publish(memberIDs, realtime.Event{Type: "server.member.joined", Data: map[string]any{"server_id": sid, "user_id": requiredUserID(c)}})
+			}
 		}
 		c.JSON(http.StatusOK, gin.H{"server_id": sid})
 	})

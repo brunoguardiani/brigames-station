@@ -23,7 +23,7 @@ func NewHandler(pool *pgxpool.Pool, identityService *identity.Service, tokenMana
 	registerIdentityRoutes(router, identityService, tokenManager, serverService, hub)
 	registerServerRoutes(router, serverService, tokenManager, hub)
 	registerMessageRoutes(router, messageService, tokenManager, hub)
-	registerInviteRoutes(router, inviteService, tokenManager)
+	registerInviteRoutes(router, inviteService, tokenManager, serverService, hub)
 	if voiceService != nil {
 		registerVoiceRoutes(router, voiceService, tokenManager, serverService, hub)
 	}

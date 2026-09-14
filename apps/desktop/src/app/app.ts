@@ -216,6 +216,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private removeRealtimePresenceListener?: () => void;
   private removeRealtimeVoicePresenceListener?: () => void;
   private removeRealtimeProfileListener?: () => void;
+  private removeRealtimeServerMemberJoinedListener?: () => void;
   private removeWebRTCSignalListener?: () => void;
   private removeUpdaterStatusListener?: () => void;
   private updaterStatusRevision = 0;
@@ -309,6 +310,9 @@ export class AppComponent implements OnInit, OnDestroy {
     this.removeRealtimeProfileListener = window.desktop.realtime.onProfileUpdated((profile) => {
       this.applyProfileUpdate(profile.user_id, { ...(profile.username !== undefined ? { username: profile.username } : {}), avatar_id: profile.avatar_id });
     });
+    this.removeRealtimeServerMemberJoinedListener = window.desktop.realtime.onServerMemberJoined((membership) => {
+      if (this.selectedServer()?.id === membership.server_id) void this.refreshServerMembers(membership.server_id);
+    });
     this.removeWebRTCSignalListener = window.desktop.realtime.onWebRTCSignal((signal) => {
       void this.handlePeerMediaSignal(signal).catch((error) => console.error('[webrtc] incoming signal failed', error instanceof Error ? error.message : String(error)));
     });
@@ -323,6 +327,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.removeRealtimePresenceListener?.();
     this.removeRealtimeVoicePresenceListener?.();
     this.removeRealtimeProfileListener?.();
+    this.removeRealtimeServerMemberJoinedListener?.();
     this.removeWebRTCSignalListener?.();
     this.removeUpdaterStatusListener?.();
     void this.participantAudio.flushPersistence();
@@ -403,11 +408,13 @@ export class AppComponent implements OnInit, OnDestroy {
   protected async selectChannel(channel: Channel): Promise<void> { if (channel.type !== 'text') return; this.closeParticipantContextMenu(); this.voiceMediaVisible.set(false); this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
   protected async joinVoiceChannel(channel: Channel): Promise<void> {
     if (this.voiceChannel()?.id === channel.id) { await this.returnToVoiceCall(); return; }
-    await this.leaveVoiceChannel(); this.loading.set(true); this.error.set('');
-    this.voiceMediaVisible.set(true);
-    this.selectedChannel.set(null);
-    this.messages.set([]);
+    if (this.loading()) return;
+    this.loading.set(true); this.error.set('');
     try {
+      await this.leaveVoiceChannel();
+      this.voiceMediaVisible.set(true);
+      this.selectedChannel.set(null);
+      this.messages.set([]);
       const session = await window.desktop.voice.join(channel.id);
       const room = new Room({
         publishDefaults: {
@@ -476,9 +483,15 @@ export class AppComponent implements OnInit, OnDestroy {
         this.activeSpeakerIDs.set(speakers.map((speaker) => speaker.identity));
         this.schedulePeerMediaLayout();
       });
-      room.on(RoomEvent.Reconnecting, () => this.voiceReconnecting.set(true));
-      room.on(RoomEvent.Reconnected, () => this.voiceReconnecting.set(false));
-      room.on(RoomEvent.Disconnected, () => {
+      room.on(RoomEvent.Reconnecting, () => {
+        if (this.voiceRoom === room) this.voiceReconnecting.set(true);
+      });
+      room.on(RoomEvent.Reconnected, () => {
+        if (this.voiceRoom === room) this.voiceReconnecting.set(false);
+      });
+      room.on(RoomEvent.Disconnected, (reason) => {
+        console.warn('[voice] room disconnected', { channelID: channel.id, reason, active: this.voiceRoom === room });
+        if (this.voiceRoom !== room) return;
         this.voiceRoom = undefined;
         this.voiceChannel.set(null);
         this.voiceReconnecting.set(false);

@@ -94,6 +94,11 @@ contextBridge.exposeInMainWorld('desktop', {
       ipcRenderer.on('realtime:profile-updated', listener);
       return () => ipcRenderer.removeListener('realtime:profile-updated', listener);
     },
+    onServerMemberJoined: (callback: (membership: unknown) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, membership: unknown) => callback(membership);
+      ipcRenderer.on('realtime:server-member-joined', listener);
+      return () => ipcRenderer.removeListener('realtime:server-member-joined', listener);
+    },
     sendWebRTCSignal: (signal: unknown) => ipcRenderer.invoke('realtime:send-webrtc-signal', signal),
     onWebRTCSignal: (callback: (signal: unknown) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, signal: unknown) => callback(signal);

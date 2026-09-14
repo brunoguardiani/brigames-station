@@ -21,7 +21,7 @@
         <nav class="channel-list" aria-label="Canais de voz">
           @for (channel of channels(); track channel.id) {
             @if (channel.type === 'voice') {
-              <button type="button" [class.selected]="voiceChannel()?.id === channel.id" (click)="joinVoiceChannel(channel)">
+              <button type="button" [class.selected]="voiceChannel()?.id === channel.id" [disabled]="loading()" (click)="joinVoiceChannel(channel)">
                 <span>&#9673;</span>{{ channel.name }}
                 @if (voiceChannel()?.id === channel.id && voiceMediaActive() && voiceMediaVisible()) {
                   <span class="voice-watching-indicator" title="Assistindo transmissão" aria-label="Assistindo transmissão">

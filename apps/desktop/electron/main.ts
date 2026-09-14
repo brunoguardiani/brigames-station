@@ -162,6 +162,7 @@ type DisplaySourceCategory = 'window' | 'screen' | 'application';
 type DisplaySource = { id: string; name: string; thumbnail: string; icon?: string; kind: 'screen' | 'window'; category: DisplaySourceCategory };
 type VoicePresenceChanged = { server_id: number; user_id: number; channel_id: number | null; started_at?: string | null; muted?: boolean; camera?: boolean; screen?: boolean };
 type ProfileUpdated = { user_id: number; username?: string; avatar_id?: string | null; status?: 'online' | 'idle' | 'invisible' };
+type ServerMemberJoined = { server_id: number; user_id: number };
 type WebRTCSignalKind = 'offer' | 'answer' | 'ice' | 'media.available' | 'media.unavailable' | 'media.query' | 'media.watch' | 'media.unwatch';
 type WebRTCSignal = { channel_id: number; to_user_id: number; kind: WebRTCSignalKind; session_id?: string; payload: unknown };
 type IncomingWebRTCSignal = Omit<WebRTCSignal, 'to_user_id'> & { from_user_id: number };
@@ -296,7 +297,7 @@ async function connectRealtime(): Promise<void> {
   socket.addEventListener('message', (event) => {
     if (realtimeSocket !== socket || typeof event.data !== 'string') return;
     try {
-      const message = JSON.parse(event.data) as { type?: string; data?: Message | VoicePresenceChanged | ProfileUpdated | IncomingWebRTCSignal };
+      const message = JSON.parse(event.data) as { type?: string; data?: Message | VoicePresenceChanged | ProfileUpdated | ServerMemberJoined | IncomingWebRTCSignal };
       if (message.type === 'authenticated') {
         authenticated = true;
         realtimeRefreshRequired = false;
@@ -310,6 +311,8 @@ async function connectRealtime(): Promise<void> {
         sendToRenderers('realtime:voice-presence-changed', message.data);
       } else if (message.type === 'profile.updated' && message.data) {
         sendToRenderers('realtime:profile-updated', message.data);
+      } else if (message.type === 'server.member.joined' && message.data) {
+        sendToRenderers('realtime:server-member-joined', message.data);
       } else if (message.type === 'webrtc.signal' && isIncomingWebRTCSignal(message.data)) {
         const signal = message.data;
         console.info('[webrtc] signal received from backend', { channelID: signal.channel_id, fromUserID: signal.from_user_id, kind: signal.kind });
