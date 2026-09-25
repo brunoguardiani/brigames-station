@@ -48,6 +48,10 @@ interface Window {
     screenShare: {
       listSources(): Promise<Array<{ id: string; name: string; thumbnail: string; icon?: string; kind: 'screen' | 'window'; category: 'window' | 'screen' | 'application' }>>;
       selectSource(sourceID: string): Promise<void>;
+      startWindowAudio(sourceID: string, id: string): Promise<void>;
+      stopWindowAudio(id: string): Promise<void>;
+      onWindowAudioData(callback: (data: { id: string; pcm: Uint8Array }) => void): () => void;
+      onWindowAudioEnded(callback: (id: string) => void): () => void;
     };
     invites: { create(serverID: number): Promise<{ code: string; expires_at: string }>; createAndCopy(serverID: number): Promise<{ code: string; expires_at: string }>; join(code: string): Promise<{ server_id: number }>; };
     settings: {

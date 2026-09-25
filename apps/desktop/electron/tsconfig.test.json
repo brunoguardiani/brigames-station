@@ -4,6 +4,6 @@
     "rootDir": ".",
     "outDir": "../out/updater-tests"
   },
-  "include": ["updater/**/*.ts"],
+  "include": ["updater/**/*.ts", "display-media*.ts"],
   "exclude": []
 }

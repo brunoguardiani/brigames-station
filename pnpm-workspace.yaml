@@ -2,6 +2,7 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  '@kokapuk/application-loopback': false
   '@parcel/watcher': true
   electron-sparkle-updater: true
   electron-winstaller: false

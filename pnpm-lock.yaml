@@ -62,6 +62,9 @@ importers:
       '@angular/compiler-cli':
         specifier: 22.1.2
         version: 22.1.2(@angular/compiler@22.1.2)(typescript@6.0.3)
+      '@kokapuk/application-loopback':
+        specifier: 1.0.2
+        version: 1.0.2
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
@@ -673,6 +676,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@kokapuk/application-loopback@1.0.2':
+    resolution: {integrity: sha512-mUF4/CgkNDLpAb+0fCuCnfDt+q31isikx16itKbnjs4nkejRyewJ5bHqnKd0bA//GWhKjncfO7WGG/juBiz8lQ==}
 
   '@listr2/prompt-adapter-inquirer@4.2.4':
     resolution: {integrity: sha512-/KRI2DMD7JGSYaREF0Ygl7AefJ/2ase4Gc5cBiKqT5l4tFjsSJfhFGcc5nSkgl0Sp9LkCQNzl/cqbVJYP2L3dw==}
@@ -2484,6 +2490,10 @@ packages:
   node-addon-api@7.1.1:
     resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
 
+  node-addon-api@8.5.0:
+    resolution: {integrity: sha512-/bRZty2mXUIFY/xU5HLvveNHlswNJej+RnxBjOMkidWfwZzgTbPG1E3K5TOxRLOR+5hX7bSofy8yf1hZevMS8A==}
+    engines: {node: ^18 || ^20 || >= 21}
+
   node-addon-api@8.9.2:
     resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
     engines: {node: ^18 || ^20 || >= 21}
@@ -3796,6 +3806,10 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@kokapuk/application-loopback@1.0.2':
+    dependencies:
+      node-addon-api: 8.5.0
 
   '@listr2/prompt-adapter-inquirer@4.2.4(@inquirer/prompts@8.5.2(@types/node@26.2.0))(@types/node@26.2.0)(listr2@10.2.2)':
     dependencies:
@@ -5491,6 +5505,8 @@ snapshots:
 
   node-addon-api@7.1.1:
     optional: true
+
+  node-addon-api@8.5.0: {}
 
   node-addon-api@8.9.2: {}
 

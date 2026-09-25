@@ -29,6 +29,7 @@ module.exports = {
     // blockmap sidecars are removed after packaging by the cleanup script.
   } : {}),
   win: {
+    extraResources: [{ from: 'node_modules/@kokapuk/application-loopback/build/Release/addon.node', to: 'window-audio/addon.node' }],
     target: [{ target: 'nsis', arch: ['x64'] }],
     icon: 'src/assets/brigames-station-icon.png',
     artifactName: 'brigames-station-Setup-${version}.${ext}',

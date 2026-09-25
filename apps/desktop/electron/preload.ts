@@ -53,6 +53,18 @@ contextBridge.exposeInMainWorld('desktop', {
   screenShare: {
     listSources: () => ipcRenderer.invoke('screen-share:list-sources'),
     selectSource: (sourceID: string) => ipcRenderer.invoke('screen-share:select-source', sourceID),
+    startWindowAudio: (sourceID: string, id: string): Promise<void> => ipcRenderer.invoke('screen-share:start-window-audio', sourceID, id),
+    stopWindowAudio: (id: string): Promise<void> => ipcRenderer.invoke('screen-share:stop-window-audio', id),
+    onWindowAudioData: (callback: (data: { id: string; pcm: Uint8Array }) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { id: string; pcm: Uint8Array }) => callback(data);
+      ipcRenderer.on('screen-share:window-audio-data', listener);
+      return () => ipcRenderer.removeListener('screen-share:window-audio-data', listener);
+    },
+    onWindowAudioEnded: (callback: (id: string) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, id: string) => callback(id);
+      ipcRenderer.on('screen-share:window-audio-ended', listener);
+      return () => ipcRenderer.removeListener('screen-share:window-audio-ended', listener);
+    },
   },
   invites: { create: (serverID: number) => ipcRenderer.invoke('invites:create', serverID), createAndCopy: (serverID: number) => ipcRenderer.invoke('invites:create-and-copy', serverID), join: (code: string) => ipcRenderer.invoke('invites:join', code) },
   settings: {

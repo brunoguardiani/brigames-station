@@ -11,6 +11,8 @@ import { clearSelectedMediaWhenUnavailable, selectedMediaSourceForParticipant, t
 import { MicProcessor, createMicWorkletNode, decibelsToLinearGain } from './rnnoise/mic-processor';
 import { DfnProcessor, createDfnWorkletNode } from './deepfilter/dfn-processor';
 import { SpeakingDetectorService } from './speaking-detector.service';
+import { MemberSnapshot } from './member-snapshot';
+import { attachWindowAudio } from './window-audio';
 
 type BackendState = 'checking' | 'available' | 'unavailable';
 export type User = { id: number; username: string; email: string; role: string; avatar_id: string | null; status: 'online' | 'idle' | 'invisible' };
@@ -221,6 +223,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private removeUpdaterStatusListener?: () => void;
   private updaterStatusRevision = 0;
   private voiceRoom?: Room;
+  private readonly memberSnapshot = new MemberSnapshot<ServerMember>();
+  private memberRefreshRevision = 0;
   private readonly participantAudio = new ParticipantAudioService({
     load: async () => {
       const settings = await window.desktop.settings.get();
@@ -243,6 +247,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private voiceAudioContext?: AudioContext;
   private peerMediaConfiguration?: RTCConfiguration;
   private localPeerMedia = new Map<PeerMediaKind, MediaStream>();
+  private readonly windowAudioCleanup = new Map<MediaStream, () => void>();
+  private pendingWindowAudio?: AbortController;
   private peerConnections = new Map<string, PeerMediaConnection>();
   private pendingPeerCandidates = new Map<string, PendingPeerCandidates>();
   private cameraEffectPipeline?: CameraEffectPipeline;
@@ -291,7 +297,9 @@ export class AppComponent implements OnInit, OnDestroy {
       this.messages.update((items) => items.some((item) => item.id === message.id) ? items : [...items, message]);
     });
     this.removeRealtimePresenceListener = window.desktop.realtime.onPresenceChanged((presence) => {
-      this.members.update((members) => members.map((member) => member.id === presence.user_id ? { ...member, online: presence.online, status: presence.online ? (member.status === 'offline' ? 'online' : member.status) : 'offline' } : member));
+      const applyPresence = (member: ServerMember): ServerMember => ({ ...member, online: presence.online, status: presence.online ? (member.status === 'offline' ? 'online' : member.status) : 'offline' });
+      this.memberSnapshot.patch(presence.user_id, applyPresence);
+      this.members.update((members) => members.map((member) => member.id === presence.user_id ? applyPresence(member) : member));
     });
     this.removeRealtimeVoicePresenceListener = window.desktop.realtime.onVoicePresenceChanged((presence) => {
       const voiceChannel = this.voiceChannel();
@@ -302,10 +310,16 @@ export class AppComponent implements OnInit, OnDestroy {
         else this.removePeerMediaForUser(presence.user_id, voiceChannel.id);
       }
       if (this.selectedServer()?.id !== presence.server_id) return;
+      const patch: Partial<ServerMember> = {
+        voice_channel_id: presence.channel_id, voice_call_started_at: presence.started_at,
+        voice_muted: presence.muted === true, voice_camera: presence.camera === true, voice_screen: presence.screen === true,
+      };
+      this.memberSnapshot.patch(presence.user_id, patch);
+      if (!this.members().some((member) => member.id === presence.user_id)) void this.refreshServerMembers(presence.server_id);
       if (presence.channel_id !== null) this.noteVoiceMemberState(presence.user_id, { muted: presence.muted === true, camera: presence.camera === true, screen: presence.screen === true });
       else this.noteVoiceMemberState(presence.user_id, null);
       if (this.participantContextMenu()?.participantID === presence.user_id && presence.channel_id !== this.participantContextMenu()?.channelID) this.closeParticipantContextMenu();
-      this.members.update((members) => members.map((member) => member.id === presence.user_id ? { ...member, voice_channel_id: presence.channel_id } : member));
+      this.members.update((members) => members.map((member) => member.id === presence.user_id ? { ...member, ...patch } : member));
     });
     this.removeRealtimeProfileListener = window.desktop.realtime.onProfileUpdated((profile) => {
       this.applyProfileUpdate(profile.user_id, { ...(profile.username !== undefined ? { username: profile.username } : {}), avatar_id: profile.avatar_id });
@@ -402,7 +416,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   protected async selectServer(server: Server): Promise<void> {
     this.closeParticipantContextMenu(); this.error.set(''); this.voiceMediaVisible.set(false); this.selectedServer.set(server); this.selectedChannel.set(null); this.messages.set([]); this.channels.set([]); this.members.set([]);
-    try { const [channels, members] = await Promise.all([window.desktop.channels.list(server.id), window.desktop.servers.listMembers(server.id)]); this.channels.set(channels); this.members.set(members); this.ingestVoiceCallTimers(members); this.ingestVoiceMemberStates(members); }
+    try { const [channels] = await Promise.all([window.desktop.channels.list(server.id), this.refreshServerMembers(server.id)]); if (this.selectedServer()?.id === server.id) this.channels.set(channels); }
     catch (error) { this.error.set(this.messageFor(error, 'Unable to load channels.')); }
   }
   protected async selectChannel(channel: Channel): Promise<void> { if (channel.type !== 'text') return; this.closeParticipantContextMenu(); this.voiceMediaVisible.set(false); this.selectedChannel.set(channel); this.error.set(''); try { this.messages.set((await window.desktop.messages.list(channel.id)).messages.reverse()); } catch (error) { this.error.set(this.messageFor(error, 'Unable to load messages.')); } }
@@ -452,6 +466,7 @@ export class AppComponent implements OnInit, OnDestroy {
       });
       room.on(RoomEvent.ParticipantConnected, () => {
         refreshParticipants();
+        if (this.selectedServer()?.id === channel.server_id) void this.refreshServerMembers(channel.server_id);
         if (this.voiceRoom === room) this.playVoiceSound('join');
       });
       room.on(RoomEvent.ParticipantDisconnected, (participant) => {
@@ -840,7 +855,7 @@ export class AppComponent implements OnInit, OnDestroy {
     catch (error) { this.error.set(this.messageFor(error, 'Unable to list screens for sharing.')); }
     finally { this.loading.set(false); }
   }
-  protected cancelScreenSharePicker(): void { this.screenSharePickerOpen.set(false); }
+  protected cancelScreenSharePicker(): void { this.pendingWindowAudio?.abort(); this.screenSharePickerOpen.set(false); }
   protected selectScreenShareCategory(category: ScreenShareSourceCategory): void { this.screenShareCategory.set(category); }
   protected selectScreenShareQuality(quality: ScreenShareQuality): void { this.screenShareQuality.set(quality); }
   protected screenShareSourceCount(category: ScreenShareSourceCategory): number { return this.screenShareSources().filter((source) => source.category === category).length; }
@@ -853,12 +868,29 @@ export class AppComponent implements OnInit, OnDestroy {
       console.info('[webrtc] selected display source', JSON.stringify({ kind: source.kind, name: source.name }));
       await window.desktop.screenShare.selectSource(source.id);
       const includeAudio = this.systemAudioSupported && this.shareSystemAudio;
+      const includeSystemAudio = includeAudio && source.kind === 'screen';
       const quality = this.screenShareQuality();
       const profile = screenShareQualityProfiles[quality];
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: profile.width }, height: { max: profile.height }, frameRate: { max: profile.maxFramerate } }, audio: includeAudio && !this.usesLoopbackSystemAudio });
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: profile.width }, height: { max: profile.height }, frameRate: { max: profile.maxFramerate } }, audio: includeSystemAudio && !this.usesLoopbackSystemAudio });
       if (this.voiceRoom !== room || !this.screenSharePickerOpen()) return;
       stream.getVideoTracks().forEach((track) => { track.contentHint = 'motion'; });
-      if (includeAudio && this.usesLoopbackSystemAudio) await this.attachLoopbackSystemAudio(stream);
+      if (includeSystemAudio && this.usesLoopbackSystemAudio) await this.attachLoopbackSystemAudio(stream);
+      if (includeAudio && source.kind === 'window' && !this.usesLoopbackSystemAudio) {
+        const cancellation = this.pendingWindowAudio = new AbortController();
+        try {
+          const cleanup = await attachWindowAudio(stream, source.id, () => {
+            this.error.set('A captura do áudio do aplicativo foi encerrada. A transmissão continua sem áudio.');
+          }, cancellation.signal);
+          this.windowAudioCleanup.set(stream, cleanup);
+        } catch (error) {
+          if (!cancellation.signal.aborted) {
+            this.error.set('Não foi possível capturar apenas o áudio deste aplicativo; compartilhando somente o vídeo.');
+            console.warn('[webrtc] unable to capture window audio', error);
+          }
+        } finally {
+          if (this.pendingWindowAudio === cancellation) this.pendingWindowAudio = undefined;
+        }
+      }
       if (this.voiceRoom !== room || !this.screenSharePickerOpen()) return;
       this.activeScreenShareQuality = quality;
       await this.publishPeerMedia('screen', stream);
@@ -870,7 +902,7 @@ export class AppComponent implements OnInit, OnDestroy {
       if (screenChannel) void this.syncVoicePresence(screenChannel.id).catch(() => undefined);
     } catch (error) { this.error.set(this.messageFor(error, 'Unable to start screen sharing.')); }
     finally {
-      if (stream && this.localPeerMedia.get('screen') !== stream) stream.getTracks().forEach((track) => track.stop());
+      if (stream && this.localPeerMedia.get('screen') !== stream) this.stopMediaStream(stream);
       this.loading.set(false);
     }
   }
@@ -949,7 +981,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.addPeerMediaVideo(`local:${kind}`, stream, kind, this.user()?.username ?? 'You', undefined, true);
     if (replacingScreen) {
       // Keep availability and the viewers' selection while renegotiating video/audio with the new capture.
-      previous.getTracks().forEach((track) => track.stop());
+      this.stopMediaStream(previous);
       await Promise.all(viewers.map((userID) => this.startPeerMediaOffer(userID, kind).catch((error) => {
         console.warn('[webrtc] unable to switch screen for viewer', { userID, error });
       })));
@@ -962,7 +994,7 @@ export class AppComponent implements OnInit, OnDestroy {
     console.info('[webrtc] stopping local media', { kind });
     if (kind === 'camera') this.stopCameraEffectPipeline();
     this.localPeerMedia.delete(kind);
-    stream.getTracks().forEach((track) => track.stop());
+    this.stopMediaStream(stream);
     if (kind === 'camera') this.cameraEnabled.set(false);
     if (kind === 'screen') this.screenSharing.set(false);
     this.removePeerMediaVideo(`local:${kind}`);
@@ -973,15 +1005,23 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   private async queryPeerMedia(channel: Channel): Promise<void> {
     console.info('[webrtc] querying media availability', { channelID: channel.id });
-    await Promise.all(this.voiceMembers(channel.id)
-      .filter((member) => member.id !== this.currentUserID())
-      .map((member) => this.sendPeerSignal(member.id, 'media.query', {})));
+    await Promise.all(this.voiceRecipientIDs(channel.id).map((id) => this.sendPeerSignal(id, 'media.query', {})));
+  }
+  private voiceRecipientIDs(channelID: number): number[] {
+    const ids = new Set(this.voiceMembers(channelID).map((member) => member.id));
+    if (this.voiceChannel()?.id === channelID) {
+      for (const participant of this.voiceRoom?.remoteParticipants.values() ?? []) {
+        const id = Number(participant.identity);
+        if (Number.isSafeInteger(id) && id > 0) ids.add(id);
+      }
+    }
+    ids.delete(this.currentUserID());
+    return [...ids];
   }
   private async announcePeerMedia(kind: PeerMediaKind, signalKind: 'media.available' | 'media.unavailable', recipientID?: number): Promise<void> {
     const channel = this.voiceChannel();
     if (!channel) return;
-    const recipients = recipientID ? [recipientID] : this.voiceMembers(channel.id)
-      .map((member) => member.id).filter((id) => id !== this.currentUserID());
+    const recipients = recipientID ? [recipientID] : this.voiceRecipientIDs(channel.id);
     await Promise.all(recipients.map((id) => this.sendPeerSignal(id, signalKind, { kind })));
   }
   private async sendPeerSignal(toUserID: number, kind: PeerSignalKind, payload: unknown, sessionID?: string): Promise<void> {
@@ -1378,11 +1418,18 @@ export class AppComponent implements OnInit, OnDestroy {
       if (queued.remoteUserID === remoteUserID && (!kind || queued.kind === kind)) this.pendingPeerCandidates.delete(sessionID);
     }
   }
+  private stopMediaStream(stream: MediaStream): void {
+    this.windowAudioCleanup.get(stream)?.();
+    this.windowAudioCleanup.delete(stream);
+    stream.getTracks().forEach((track) => track.stop());
+  }
   private closePeerMedia(): void {
+    this.pendingWindowAudio?.abort();
+    this.pendingWindowAudio = undefined;
     this.stopCameraEffectPipeline();
     for (const kind of ['camera', 'screen'] as const) {
       const stream = this.localPeerMedia.get(kind);
-      stream?.getTracks().forEach((track) => track.stop());
+      if (stream) this.stopMediaStream(stream);
     }
     this.localPeerMedia.clear();
     for (const peer of [...this.peerConnections.values()]) this.closePeerConnection(peer.sessionID);
@@ -1734,6 +1781,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private applyProfileUpdate(userID: number, patch: { username?: string; avatar_id?: string | null; status?: UserStatus }): void {
     this.user.update((user) => user && user.id === userID ? { ...user, ...patch } : user);
     const memberPatch = { ...patch, ...(patch.status !== undefined ? { status: patch.status === 'invisible' ? 'offline' as const : patch.status } : {}) };
+    this.memberSnapshot.patch(userID, memberPatch);
     this.members.update((members) => members.map((member) => member.id === userID ? { ...member, ...memberPatch } : member));
     this.messages.update((messages) => messages.map((message) => message.author_id === userID ? { ...message, ...(patch.username !== undefined ? { author_username: patch.username } : {}), ...(patch.avatar_id !== undefined ? { author_avatar_id: patch.avatar_id } : {}) } : message));
   }
@@ -2138,9 +2186,10 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch { /* The next explicit channel selection will retry. */ }
   }
   private async refreshServerMembers(serverID: number): Promise<void> {
+    const revision = ++this.memberRefreshRevision;
     try {
-      const members = await window.desktop.servers.listMembers(serverID);
-      if (this.selectedServer()?.id === serverID) {
+      const members = await this.memberSnapshot.load(() => window.desktop.servers.listMembers(serverID));
+      if (this.selectedServer()?.id === serverID && this.memberRefreshRevision === revision) {
         this.members.set(members);
         this.ingestVoiceCallTimers(members);
         this.ingestVoiceMemberStates(members);

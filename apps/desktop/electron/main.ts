@@ -7,11 +7,15 @@ import { registerDesktopUpdaterIPC } from './updater/updater.ipc';
 import { createUpdaterAdapter } from './updater/updater-adapter.factory';
 import { DesktopUpdaterService } from './updater/updater.service';
 import { DESKTOP_UPDATER_CHANNELS } from './updater/updater.types';
+import { registerWindowAudioIPC } from './window-audio';
+import { displayMediaStreams } from './display-media';
 
 const backendURL = process.env['DESKTOP_BACKEND_URL'] ?? (app.isPackaged ? 'https://api.groupgo.com.br' : 'http://127.0.0.1:8080');
 const backendHealthURL = backendURL + '/health';
 const webRTCStunURL = process.env['WEBRTC_STUN_URL'] ?? 'stun:stun.cloudflare.com:3478';
 const debugEnabled = process.argv.includes('--debug') || process.env['BRIGAMES_DEBUG'] === '1';
+const grantedWindowSources = new WeakMap<Electron.WebContents, string>();
+registerWindowAudioIPC(isTrustedRendererURL, (owner, sourceID) => grantedWindowSources.get(owner) === sourceID);
 
 type ParticipantAudioPreference = { volume: number; muted: boolean };
 type ParticipantAudioSource = 'microphone' | 'screen-share';
@@ -506,7 +510,8 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
       return;
     }
 
-    callback({ video: source, ...(request.audioRequested && process.platform === 'win32' ? { audio: 'loopback' } : {}) });
+    grantedWindowSources.set(window.webContents, source.id);
+    callback(displayMediaStreams(source, request.audioRequested, process.platform));
   });
   window.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'F12' && !input.control && !input.alt && !input.meta) {

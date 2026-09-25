@@ -1,6 +1,6 @@
 {
   "name": "@brigames-station/desktop",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "private": true,
   "description": "brigames-station desktop application.",
   "author": {
@@ -17,7 +17,7 @@
   "scripts": {
     "build": "node scripts/copy-dfn.mjs && ng build && tsc -p electron/tsconfig.json",
     "copy:dfn": "node scripts/copy-dfn.mjs",
-    "test:updater": "tsc -p electron/tsconfig.test.json && node --test out/updater-tests/updater/*.test.js",
+    "test:updater": "tsc -p electron/tsconfig.test.json && node --test out/updater-tests/updater/*.test.js out/updater-tests/display-media.test.js",
     "test:call-preview": "tsc -p tsconfig.call-preview-test.json && node --test out/call-preview-tests/tests/*.test.js",
     "test": "pnpm run test:updater && pnpm run test:call-preview",
     "serve": "ng serve --host 127.0.0.1 --port 4200",
@@ -48,6 +48,7 @@
     "@angular/build": "22.1.4",
     "@angular/cli": "22.1.4",
     "@angular/compiler-cli": "22.1.2",
+    "@kokapuk/application-loopback": "1.0.2",
     "@types/node": "^26.2.0",
     "@types/sdp-transform": "^3.0.0",
     "electron": "43.4.0",

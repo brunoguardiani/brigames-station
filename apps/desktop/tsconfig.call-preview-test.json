@@ -8,6 +8,11 @@
     "types": ["node"]
   },
   "include": [
+    "src/electron-api.d.ts",
+    "src/app/member-snapshot.ts",
+    "src/app/window-audio.ts",
+    "tests/member-snapshot.test.ts",
+    "tests/window-audio.test.ts",
     "src/app/call-mini-preview-state.ts",
     "src/app/participant-audio.service.ts",
     "src/app/participant-context-menu-state.ts",
