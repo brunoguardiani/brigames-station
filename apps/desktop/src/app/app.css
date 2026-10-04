@@ -110,6 +110,8 @@ select{font:inherit;width:100%;border:1px solid transparent;border-radius:.5rem;
 .message-image img{display:block;max-width:100%;max-height:24rem;border-radius:.6rem;object-fit:contain;cursor:zoom-in}
 .message-image:hover img{filter:brightness(.94)}
 .message p a{color:#a59eff;overflow-wrap:anywhere}
+.message p .mention{padding:.02rem .25rem;border-radius:.3rem;color:#dedbff;background:#45418366;font-weight:700}
+.message p .mention-self{color:#fff;background:#766cf6a6}
 .message p a:hover{color:#bbb5ff;text-decoration:underline}
 .lightbox{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:2rem;background:#000c;cursor:zoom-out}
 .lightbox img{display:block;max-width:92vw;max-height:92vh;border-radius:.5rem;object-fit:contain;box-shadow:0 2rem 4rem #000a}

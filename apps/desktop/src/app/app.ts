@@ -1965,8 +1965,15 @@ export class AppComponent implements OnInit, OnDestroy {
     return avatarID ? `assets/avatars/${avatarID}.png` : null;
   }
   private static readonly IMAGE_URL_PATTERN = /^https?:\/\/\S+$/i;
-  private static readonly EMBEDDED_URL_PATTERN = /https?:\/\/[^\s]+/g;
   private static readonly TRAILING_PUNCTUATION_PATTERN = /[.,;:!?()[\]{}<>'"]+$/;
+  private static readonly URL_OR_MENTION_PATTERN = /(https?:\/\/[^\s]+)|(@[^\s@]+)/g;
+  private readonly mentionNames = computed(() => {
+    const names = new Set<string>(['everyone']);
+    const user = this.user();
+    if (user) names.add(user.username.toLowerCase());
+    for (const member of this.members()) names.add(member.username.toLowerCase());
+    return names;
+  });
   protected readonly failedImageMessages = signal<Set<string>>(new Set());
   protected readonly lightboxImageURL = signal<string | null>(null);
   protected imageURL(content: string): string | null {
@@ -1979,18 +1986,29 @@ export class AppComponent implements OnInit, OnDestroy {
       return null;
     }
   }
-  protected messageSegments(content: string): Array<{ text: string; url: string | null }> {
-    const segments: Array<{ text: string; url: string | null }> = [];
+  protected messageSegments(content: string): Array<{ text: string; url: string | null; mention: boolean }> {
+    const segments: Array<{ text: string; url: string | null; mention: boolean }> = [];
     let lastIndex = 0;
-    for (const match of content.matchAll(AppComponent.EMBEDDED_URL_PATTERN)) {
-      const url = match[0].replace(AppComponent.TRAILING_PUNCTUATION_PATTERN, '');
+    const pattern = new RegExp(AppComponent.URL_OR_MENTION_PATTERN.source, 'g');
+    for (const match of content.matchAll(pattern)) {
       const index = match.index ?? 0;
-      if (index > lastIndex) segments.push({ text: content.slice(lastIndex, index), url: null });
-      if (url) segments.push({ text: url, url });
-      lastIndex = index + url.length;
+      if (index > lastIndex) segments.push({ text: content.slice(lastIndex, index), url: null, mention: false });
+      if (match[1] !== undefined) {
+        const url = match[0].replace(AppComponent.TRAILING_PUNCTUATION_PATTERN, '');
+        if (url) segments.push({ text: url, url, mention: false });
+      } else {
+        const name = match[0].slice(1).toLowerCase();
+        segments.push({ text: match[0], url: null, mention: this.mentionNames().has(name) });
+      }
+      lastIndex = index + match[0].length;
     }
-    if (lastIndex < content.length) segments.push({ text: content.slice(lastIndex), url: null });
+    if (lastIndex < content.length) segments.push({ text: content.slice(lastIndex), url: null, mention: false });
     return segments;
+  }
+  protected isSelfMention(text: string): boolean {
+    const name = text.slice(1).toLowerCase();
+    const user = this.user();
+    return name === 'everyone' || (!!user && name === user.username.toLowerCase());
   }
   protected messageImage(message: Message): string | null {
     if (this.failedImageMessages().has(String(message.id))) return null;
