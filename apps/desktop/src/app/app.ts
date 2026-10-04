@@ -1195,6 +1195,52 @@ export class AppComponent implements OnInit, OnDestroy {
       }).catch(() => undefined);
     }
   }
+  private logPeerIceDiagnostics(peer: PeerMediaConnection, trigger: string): void {
+    void peer.connection.getStats().then((report) => {
+      const candidates = new Map<string, { side: string; candidateType: string; protocol: string; address: string; port: number; url: string }>();
+      const pairsById = new Map<string, { state: string; nominated: boolean; localCandidateId?: string; remoteCandidateId?: string }>();
+      let selectedPairID: string | undefined;
+      report.forEach((stat) => {
+        const fields = stat as unknown as Record<string, unknown>;
+        if (stat.type === 'local-candidate' || stat.type === 'remote-candidate') {
+          candidates.set(stat.id, {
+            side: stat.type === 'local-candidate' ? 'local' : 'remote',
+            candidateType: String(fields['candidateType'] ?? 'unknown'),
+            protocol: String(fields['protocol'] ?? 'unknown'),
+            address: String(fields['address'] ?? fields['ip'] ?? 'unknown'),
+            port: Number(fields['port'] ?? 0),
+            url: String(fields['url'] ?? 'none'),
+          });
+        } else if (stat.type === 'candidate-pair') {
+          pairsById.set(stat.id, {
+            state: String(fields['state'] ?? 'unknown'),
+            nominated: fields['nominated'] === true,
+            localCandidateId: typeof fields['localCandidateId'] === 'string' ? fields['localCandidateId'] : undefined,
+            remoteCandidateId: typeof fields['remoteCandidateId'] === 'string' ? fields['remoteCandidateId'] : undefined,
+          });
+        } else if (stat.type === 'transport' && typeof fields['selectedCandidatePairId'] === 'string') {
+          selectedPairID = fields['selectedCandidatePairId'];
+        }
+      });
+      const pair = (selectedPairID ? pairsById.get(selectedPairID) : undefined) ?? [...pairsById.values()].find((candidate) => candidate.state === 'succeeded');
+      const describe = (id: string | undefined): string | null => {
+        const candidate = id ? candidates.get(id) : undefined;
+        return candidate ? `${candidate.candidateType}/${candidate.protocol} ${candidate.address}:${candidate.port} via ${candidate.url}` : null;
+      };
+      const localSummary = [...candidates.values()].filter((candidate) => candidate.side === 'local').reduce<Record<string, number>>((summary, candidate) => {
+        const key = candidate.candidateType + '/' + candidate.protocol;
+        summary[key] = (summary[key] ?? 0) + 1;
+        return summary;
+      }, {});
+      console.info('[webrtc] ice diagnostics', JSON.stringify({
+        trigger,
+        sessionID: peer.sessionID.slice(0, 8),
+        connectionState: peer.connection.connectionState,
+        selectedPair: pair ? { state: pair.state, nominated: pair.nominated, local: describe(pair.localCandidateId), remote: describe(pair.remoteCandidateId) } : null,
+        localCandidates: localSummary,
+      }));
+    }).catch(() => undefined);
+  }
   private async getPeerConnection(sessionID: string, direction: PeerDirection, remoteUserID: number, kind: PeerMediaKind): Promise<PeerMediaConnection> {
     const existing = this.peerConnections.get(sessionID);
     if (existing) {
@@ -1259,6 +1305,7 @@ export class AppComponent implements OnInit, OnDestroy {
     };
     connection.onconnectionstatechange = () => {
       console.info('[webrtc] peer connection state', { sessionID, direction, remoteUserID, kind, state: connection.connectionState });
+      if (['connected', 'disconnected', 'failed'].includes(connection.connectionState)) this.logPeerIceDiagnostics(peer, connection.connectionState);
       if (connection.connectionState === 'connected') {
         if (peer.disconnectTimer) clearTimeout(peer.disconnectTimer);
         peer.disconnectTimer = undefined;
