@@ -13,6 +13,9 @@ import { displayMediaStreams } from './display-media';
 const backendURL = process.env['DESKTOP_BACKEND_URL'] ?? (app.isPackaged ? 'https://api.groupgo.com.br' : 'http://127.0.0.1:8080');
 const backendHealthURL = backendURL + '/health';
 const webRTCStunURL = process.env['WEBRTC_STUN_URL'] ?? 'stun:stun.cloudflare.com:3478';
+const webRTCTurnURLs = (process.env['WEBRTC_TURN_URL'] ?? 'turn:openrelay.metered.ca:80,turn:openrelay.metered.ca:443?transport=tcp,turns:openrelay.metered.ca:443?transport=tcp').split(',').map((url) => url.trim()).filter(Boolean);
+const webRTCTurnUsername = process.env['WEBRTC_TURN_USERNAME'] ?? 'openrelayproject';
+const webRTCTurnCredential = process.env['WEBRTC_TURN_CREDENTIAL'] ?? 'openrelayproject';
 const debugEnabled = process.argv.includes('--debug') || process.env['BRIGAMES_DEBUG'] === '1';
 const grantedWindowSources = new WeakMap<Electron.WebContents, string>();
 registerWindowAudioIPC(isTrustedRendererURL, (owner, sourceID) => grantedWindowSources.get(owner) === sourceID);
@@ -694,9 +697,11 @@ ipcMain.handle('servers:leave', (_event, serverID: unknown): Promise<void> => {
 ipcMain.handle('messages:list', (_event, channelID: unknown): Promise<MessagePage> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0) throw new Error('Invalid channel ID.'); return authenticatedRequest<MessagePage>('/channels/' + channelID + '/messages'); });
 ipcMain.handle('messages:create', (_event, channelID: unknown, content: unknown): Promise<Message> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0 || typeof content !== 'string') throw new Error('Invalid message input.'); return authenticatedRequest<Message>('/channels/' + channelID + '/messages', 'POST', { content }); });
 ipcMain.handle('voice:join', (_event, channelID: unknown): Promise<{ url: string; token: string; room: string }> => { if (typeof channelID !== 'number' || !Number.isSafeInteger(channelID) || channelID <= 0) throw new Error('Invalid voice channel ID.'); return authenticatedRequest('/voice/channels/' + channelID + '/token', 'POST'); });
-ipcMain.handle('voice:get-webrtc-configuration', (event): { iceServers: Array<{ urls: string }> } => {
+ipcMain.handle('voice:get-webrtc-configuration', (event): { iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> } => {
   if (!isTrustedRendererURL(event.sender.getURL())) throw new Error('Untrusted WebRTC configuration request.');
-  return { iceServers: [{ urls: webRTCStunURL }] };
+  const iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [{ urls: webRTCStunURL }];
+  if (webRTCTurnURLs.length > 0) iceServers.push({ urls: webRTCTurnURLs, username: webRTCTurnUsername, credential: webRTCTurnCredential });
+  return { iceServers };
 });
   ipcMain.handle('voice:set-presence', (_event, payload: unknown): Promise<{ started_at: string | null } | null> => {
     if (payload === null) return authenticatedRequest<{ started_at?: string | null }>('/voice/presence', 'PUT', { channel_id: null })
