@@ -42,7 +42,7 @@ interface Window {
     messages: { list(channelID: number): Promise<MessagePage>; create(channelID: number, content: string): Promise<Message>; };
     voice: {
       join(channelID: number): Promise<{ url: string; token: string; room: string }>;
-      getWebRTCConfiguration(): Promise<{ iceServers: Array<{ urls: string }> }>;
+      getWebRTCConfiguration(): Promise<{ iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> }>;
       setPresence(payload: number | null | { channel_id: number; muted: boolean; camera: boolean; screen: boolean }): Promise<{ started_at: string | null } | null>;
     };
     screenShare: {
