@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('desktop', {
     setPresence: (payload: number | null | { channel_id: number; muted: boolean; camera: boolean; screen: boolean }) => ipcRenderer.invoke('voice:set-presence', payload),
   },
   screenShare: {
+    nativePicker: process.platform === 'darwin' && Number.parseInt(process.getSystemVersion(), 10) >= 15,
     listSources: () => ipcRenderer.invoke('screen-share:list-sources'),
     selectSource: (sourceID: string) => ipcRenderer.invoke('screen-share:select-source', sourceID),
     startWindowAudio: (sourceID: string, id: string): Promise<void> => ipcRenderer.invoke('screen-share:start-window-audio', sourceID, id),

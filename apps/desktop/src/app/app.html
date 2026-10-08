@@ -23,11 +23,6 @@
             @if (channel.type === 'voice') {
               <button type="button" [class.selected]="voiceChannel()?.id === channel.id" [disabled]="loading()" (click)="joinVoiceChannel(channel)">
                 <span>&#9673;</span>{{ channel.name }}
-                @if (voiceChannel()?.id === channel.id && voiceMediaActive() && voiceMediaVisible()) {
-                  <span class="voice-watching-indicator" title="Assistindo transmissão" aria-label="Assistindo transmissão">
-                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m8 22 4-4 4 4"/><path d="M12 18v4"/></svg>
-                  </span>
-                }
                 @if (roomTimerVisible(channel.id)) { <span class="voice-call-timer" title="Duração da chamada">{{ formatCallDuration(roomTimerElapsedSeconds(channel.id)) }}</span> }
               </button>
               @if (voiceMembers(channel.id).length > 0) {
@@ -37,12 +32,12 @@
                       <span class="voice-participant-avatar" [class.speaking]="isVoiceMemberSpeaking(member)">@if (avatarURL(member.avatar_id); as avatar) { <img [src]="avatar" alt=""> } @else { {{ member.username.slice(0, 1).toUpperCase() }} }</span>
                       <span class="voice-participant-name">{{ member.username }}</span>
                       <span class="voice-participant-actions">
-                        @if (screenShareForMember(member.id, channel.id) && !isWatchingMemberMedia(member.id, channel.id, 'screen')) {
+                        @if (screenShareForMember(member.id, channel.id) && !isWatchingMemberMedia(member.id, channel.id, 'screen') && !isVoiceMemberScreenSharing(member)) {
                           <span class="participant-media-available screen" title="Compartilhando tela" aria-label="Compartilhando tela">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m10 9 4 2-4 2Z"/><path d="M8 22h8M12 18v4"/></svg>
                           </span>
                         }
-                        @if (cameraForMember(member.id, channel.id) && !isWatchingMemberMedia(member.id, channel.id, 'camera')) {
+                        @if (cameraForMember(member.id, channel.id) && !isWatchingMemberMedia(member.id, channel.id, 'camera') && !isVoiceMemberCameraOn(member)) {
                           <span class="participant-media-available camera" title="Câmera ligada" aria-label="Câmera ligada">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 10 4.5-2.25A1 1 0 0 1 21 8.65v6.7a1 1 0 0 1-1.5.9L15 14"/></svg>
                           </span>
@@ -75,12 +70,12 @@
                             }
                           </button>
                         }
-                        @if (member.voice_channel_id === channel.id && isVoiceMemberScreenSharing(member)) {
+                        @if (member.voice_channel_id === channel.id && isVoiceMemberScreenSharing(member) && !isWatchingMemberMedia(member.id, channel.id, 'screen')) {
                           <span class="voice-participant-muted screen-sharing" title="Compartilhando a tela" aria-label="Compartilhando a tela">
                             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m10 9 4 2-4 2Z" fill="currentColor" stroke="none"/><path d="M8 22h8M12 18v4"/></svg>
                           </span>
                         }
-                        @if (member.voice_channel_id === channel.id && isVoiceMemberCameraOn(member)) {
+                        @if (member.voice_channel_id === channel.id && isVoiceMemberCameraOn(member) && !isWatchingMemberMedia(member.id, channel.id, 'camera')) {
                           <span class="voice-participant-muted camera-on" title="Câmera ligada" aria-label="Câmera ligada">
                             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 10 4.5-2.25A1 1 0 0 1 21 8.65v6.7a1 1 0 0 1-1.5.9L15 14"/></svg>
                           </span>
@@ -256,10 +251,14 @@
     <section class="modal-backdrop" (click)="cancelScreenSharePicker()">
       <section class="screen-share-modal" role="dialog" aria-modal="true" aria-labelledby="screen-share-title" (click)="$event.stopPropagation()">
         <h2 id="screen-share-title">{{ screenSharing() ? 'Alterar transmissão' : 'Compartilhar tela' }}</h2>
-        <p>Escolha uma janela, tela inteira ou aplicativo para mostrar no canal de voz.</p>
-        @if (systemAudioSupported && (screenShareCategory() === 'screen' || !usesLoopbackSystemAudio)) { <label class="screen-audio-option"><input type="checkbox" name="shareSystemAudio" [(ngModel)]="shareSystemAudio"> {{ screenShareCategory() === 'screen' ? 'Compartilhar áudio do sistema' : 'Compartilhar áudio do aplicativo' }}</label> }
-        @if (systemAudioSupported && screenShareCategory() !== 'screen') { <p>{{ usesLoopbackSystemAudio ? 'Neste sistema, janelas são compartilhadas sem áudio.' : 'Inclui o áudio do aplicativo escolhido, inclusive outras janelas ou abas do mesmo processo.' }}</p> }
+        <p>{{ macOSNativePicker ? 'Escolha uma janela, tela ou aplicativo no seletor do macOS.' : 'Escolha uma janela, tela inteira ou aplicativo para mostrar no canal de voz.' }}</p>
+        @if (macOS && !macOSNativePicker) { <p>Este macOS permite compartilhar o vídeo aqui, mas o áudio do sistema requer o seletor nativo do macOS 15 ou mais recente.</p> }
+        @if (systemAudioSupported && (macOSNativePicker || screenShareCategory() === 'screen' || !usesLoopbackSystemAudio)) { <label class="screen-audio-option"><input type="checkbox" name="shareSystemAudio" [(ngModel)]="shareSystemAudio"> {{ macOSNativePicker || screenShareCategory() === 'screen' ? 'Compartilhar áudio do sistema' : 'Compartilhar áudio do aplicativo' }}</label> }
+        @if (systemAudioSupported && !macOSNativePicker && screenShareCategory() !== 'screen') { <p>{{ usesLoopbackSystemAudio ? 'Neste sistema, janelas são compartilhadas sem áudio.' : 'Inclui o áudio do aplicativo escolhido, inclusive outras janelas ou abas do mesmo processo.' }}</p> }
         <div class="screen-quality-option"><span class="screen-quality-label">Qualidade</span><div class="screen-quality-options" role="radiogroup" aria-label="Qualidade do compartilhamento"><button type="button" role="radio" [class.active]="screenShareQuality() === '720p'" [attr.aria-checked]="screenShareQuality() === '720p'" (click)="selectScreenShareQuality('720p')">720p</button><button type="button" role="radio" [class.active]="screenShareQuality() === '1080p'" [attr.aria-checked]="screenShareQuality() === '1080p'" (click)="selectScreenShareQuality('1080p')">1080p</button></div><small class="screen-quality-hint">1080p usa mais CPU e upload de quem compartilha</small></div>
+        @if (macOSNativePicker) {
+          <div class="confirmation-actions"><button type="button" (click)="startScreenShare()" [disabled]="loading()">Escolher no macOS</button></div>
+        } @else {
         <nav class="screen-source-tabs" role="tablist" aria-label="Tipos de compartilhamento">
           <button type="button" role="tab" [class.active]="screenShareCategory() === 'window'" [attr.aria-selected]="screenShareCategory() === 'window'" (click)="selectScreenShareCategory('window')">Janelas <span>{{ screenShareSourceCount('window') }}</span></button>
           <button type="button" role="tab" [class.active]="screenShareCategory() === 'screen'" [attr.aria-selected]="screenShareCategory() === 'screen'" (click)="selectScreenShareCategory('screen')">Telas <span>{{ screenShareSourceCount('screen') }}</span></button>
@@ -275,6 +274,7 @@
             <p class="screen-source-empty">Nenhuma opção disponível nesta categoria.</p>
           }
         </div>
+        }
         <div class="confirmation-actions"><button type="button" (click)="cancelScreenSharePicker()">Cancelar</button></div>
       </section>
     </section>

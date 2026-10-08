@@ -42,10 +42,11 @@ interface Window {
     messages: { list(channelID: number): Promise<MessagePage>; create(channelID: number, content: string): Promise<Message>; };
     voice: {
       join(channelID: number): Promise<{ url: string; token: string; room: string }>;
-      getWebRTCConfiguration(): Promise<{ iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> }>;
+      getWebRTCConfiguration(): Promise<{ iceServers: Array<{ urls: string }> }>;
       setPresence(payload: number | null | { channel_id: number; muted: boolean; camera: boolean; screen: boolean }): Promise<{ started_at: string | null } | null>;
     };
     screenShare: {
+      nativePicker: boolean;
       listSources(): Promise<Array<{ id: string; name: string; thumbnail: string; icon?: string; kind: 'screen' | 'window'; category: 'window' | 'screen' | 'application' }>>;
       selectSource(sourceID: string): Promise<void>;
       startWindowAudio(sourceID: string, id: string): Promise<void>;

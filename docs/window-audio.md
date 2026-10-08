@@ -4,10 +4,12 @@ On Windows x64, sharing a window captures the audio of the process that owns its
 HWND, including child processes. It does not capture unrelated applications.
 Multiple windows or browser tabs in that process can contribute audio.
 
-Electron's `loopback` audio is granted only for full-screen sources. Linux
-monitor-device capture is also limited to full-screen sharing. Window sharing on
-Linux and macOS is video-only. If native capture is unavailable or fails, the UI
-reports that the stream has no audio; it never falls back to system audio.
+Electron's custom-picker `loopback` audio is granted only for full-screen
+sources on Windows. Linux monitor-device capture is limited to full-screen
+sharing. On macOS 15 and newer, the native system picker handles screen and
+system-audio capture; older macOS versions continue with video-only sharing.
+If Windows window-audio capture fails, the UI reports that the stream has no
+audio; it never falls back to system audio.
 
 The Windows implementation uses the pinned N-API binary from
 `@kokapuk/application-loopback@1.0.2`. It is a development dependency because only

@@ -206,7 +206,8 @@ export class AppComponent implements OnInit, OnDestroy {
     return participants.find((participant) => this.activeSpeakerIDs().includes(participant.identity)) ?? participants[0] ?? null;
   });
   protected readonly miniCallActiveParticipantName = computed(() => this.miniCallActiveParticipant()?.name ?? 'Chamada de voz');
-  protected readonly systemAudioSupported = navigator.userAgent.includes('Windows') || navigator.userAgent.includes('Linux');
+  protected readonly macOSNativePicker = window.desktop.screenShare.nativePicker;
+  protected readonly systemAudioSupported = this.macOSNativePicker || navigator.userAgent.includes('Windows') || navigator.userAgent.includes('Linux');
   protected readonly usesLoopbackSystemAudio = navigator.userAgent.includes('Linux');
   protected shareSystemAudio = true;
   protected registrationMode = false;
@@ -845,7 +846,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!room || this.loading()) return;
     this.loading.set(true); this.error.set('');
     try {
-      const sources = await window.desktop.screenShare.listSources();
+      const sources = this.macOSNativePicker ? [] : await window.desktop.screenShare.listSources();
       if (this.voiceRoom !== room) return;
       if (this.screenSharing()) this.screenShareQuality.set(this.activeScreenShareQuality);
       this.screenShareSources.set(sources);
@@ -859,23 +860,31 @@ export class AppComponent implements OnInit, OnDestroy {
   protected selectScreenShareCategory(category: ScreenShareSourceCategory): void { this.screenShareCategory.set(category); }
   protected selectScreenShareQuality(quality: ScreenShareQuality): void { this.screenShareQuality.set(quality); }
   protected screenShareSourceCount(category: ScreenShareSourceCategory): number { return this.screenShareSources().filter((source) => source.category === category).length; }
-  protected async startScreenShare(source: ScreenShareSource): Promise<void> {
+  protected async startScreenShare(source?: ScreenShareSource): Promise<void> {
     const room = this.voiceRoom;
     if (!room || this.loading() || !this.screenSharePickerOpen()) return;
     this.loading.set(true); this.error.set('');
     let stream: MediaStream | undefined;
     try {
-      console.info('[webrtc] selected display source', JSON.stringify({ kind: source.kind, name: source.name }));
-      await window.desktop.screenShare.selectSource(source.id);
+      if (!this.macOSNativePicker && !source) throw new Error('Screen-share source is required.');
+      console.info('[webrtc] selected display source', JSON.stringify({ kind: source?.kind ?? 'native-picker', name: source?.name ?? 'macOS' }));
+      if (source) await window.desktop.screenShare.selectSource(source.id);
       const includeAudio = this.systemAudioSupported && this.shareSystemAudio;
-      const includeSystemAudio = includeAudio && source.kind === 'screen';
+      const includeSystemAudio = includeAudio && (this.macOSNativePicker || source?.kind === 'screen');
       const quality = this.screenShareQuality();
       const profile = screenShareQualityProfiles[quality];
       stream = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: profile.width }, height: { max: profile.height }, frameRate: { max: profile.maxFramerate } }, audio: includeSystemAudio && !this.usesLoopbackSystemAudio });
       if (this.voiceRoom !== room || !this.screenSharePickerOpen()) return;
       stream.getVideoTracks().forEach((track) => { track.contentHint = 'motion'; });
       if (includeSystemAudio && this.usesLoopbackSystemAudio) await this.attachLoopbackSystemAudio(stream);
-      if (includeAudio && source.kind === 'window' && !this.usesLoopbackSystemAudio) {
+      if (includeSystemAudio && this.macOSNativePicker) {
+        const audioTrack = stream.getAudioTracks()[0];
+        if (!audioTrack || audioTrack.readyState !== 'live') this.error.set('O macOS não liberou o áudio da transmissão; compartilhando apenas o vídeo.');
+        else audioTrack.addEventListener('ended', () => {
+          if (this.localPeerMedia.get('screen') === stream) this.error.set('A captura do áudio do sistema foi encerrada. A transmissão continua sem áudio.');
+        }, { once: true });
+      }
+      if (includeAudio && source?.kind === 'window' && !this.usesLoopbackSystemAudio) {
         const cancellation = this.pendingWindowAudio = new AbortController();
         try {
           const cleanup = await attachWindowAudio(stream, source.id, () => {
