@@ -51,12 +51,16 @@ contextBridge.exposeInMainWorld('desktop', {
     setPresence: (payload: number | null | { channel_id: number; muted: boolean; camera: boolean; screen: boolean }) => ipcRenderer.invoke('voice:set-presence', payload),
   },
   screenShare: {
+    nativePicker: process.platform === 'darwin' && Number.parseInt(process.getSystemVersion(), 10) >= 15,
     listSources: () => ipcRenderer.invoke('screen-share:list-sources'),
     selectSource: (sourceID: string) => ipcRenderer.invoke('screen-share:select-source', sourceID),
     startWindowAudio: (sourceID: string, id: string): Promise<void> => ipcRenderer.invoke('screen-share:start-window-audio', sourceID, id),
     stopWindowAudio: (id: string): Promise<void> => ipcRenderer.invoke('screen-share:stop-window-audio', id),
     onWindowAudioData: (callback: (data: { id: string; pcm: Uint8Array }) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, data: { id: string; pcm: Uint8Array }) => callback(data);
+      const listener = (_event: Electron.IpcRendererEvent, data: { id: string; pcm: Uint8Array; sequence: number }) => {
+        try { callback(data); }
+        finally { ipcRenderer.send('screen-share:window-audio-consumed', data.id, data.sequence); }
+      };
       ipcRenderer.on('screen-share:window-audio-data', listener);
       return () => ipcRenderer.removeListener('screen-share:window-audio-data', listener);
     },

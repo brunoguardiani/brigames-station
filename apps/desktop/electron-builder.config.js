@@ -60,6 +60,7 @@ module.exports = {
     extendInfo: {
       NSMicrophoneUsageDescription: 'O brigames-station usa o microfone para canais de voz.',
       NSCameraUsageDescription: 'O brigames-station usa a câmera quando você decide compartilhá-la em um canal de voz.',
+      NSAudioCaptureUsageDescription: 'O brigames-station captura o áudio do sistema quando você decide compartilhá-lo em um canal de voz.',
       ...(sparkle?.mac.extendInfo ?? {}),
     },
   },
