@@ -56,7 +56,10 @@ contextBridge.exposeInMainWorld('desktop', {
     startWindowAudio: (sourceID: string, id: string): Promise<void> => ipcRenderer.invoke('screen-share:start-window-audio', sourceID, id),
     stopWindowAudio: (id: string): Promise<void> => ipcRenderer.invoke('screen-share:stop-window-audio', id),
     onWindowAudioData: (callback: (data: { id: string; pcm: Uint8Array }) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, data: { id: string; pcm: Uint8Array }) => callback(data);
+      const listener = (_event: Electron.IpcRendererEvent, data: { id: string; pcm: Uint8Array; sequence: number }) => {
+        try { callback(data); }
+        finally { ipcRenderer.send('screen-share:window-audio-consumed', data.id, data.sequence); }
+      };
       ipcRenderer.on('screen-share:window-audio-data', listener);
       return () => ipcRenderer.removeListener('screen-share:window-audio-data', listener);
     },

@@ -94,6 +94,7 @@ let selectedDisplaySource: Electron.DesktopCapturerSource | undefined;
 let cachedDisplaySources: Electron.DesktopCapturerSource[] = [];
 let desktopUpdater: DesktopUpdaterService | undefined;
 let removeUpdaterResumeListener: (() => void) | undefined;
+let primaryWindowActivationPending = false;
 
 function desktopAssetPath(filename: string): string {
   const candidates = [
@@ -114,11 +115,17 @@ function splashMascotPath(): string {
 }
 
 function showPrimaryWindow(): void {
-  const window = primaryWindow;
-  if (!window || window.isDestroyed()) return;
-  if (window.isMinimized()) window.restore();
-  window.show();
-  window.focus();
+  if (isQuitting || primaryWindowActivationPending) return;
+  primaryWindowActivationPending = true;
+  // Finish dispatching the native tray/menu event before changing activation.
+  setImmediate(() => {
+    primaryWindowActivationPending = false;
+    const window = primaryWindow;
+    if (isQuitting || !window || window.isDestroyed()) return;
+    if (window.isMinimized()) window.restore();
+    // show() already focuses the window; a second focus() is redundant.
+    window.show();
+  });
 }
 
 function createAppTray(): void {
@@ -477,6 +484,8 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Calls and window-audio delivery must keep running while minimized.
+      backgroundThrottling: false,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
@@ -484,7 +493,10 @@ async function createWindow(onReady: (window: BrowserWindow) => void): Promise<B
   window.on('close', (event) => {
     if (isQuitting) return;
     event.preventDefault();
-    window.minimize();
+    // Leave the native close dispatch before changing the window's state.
+    setImmediate(() => {
+      if (!isQuitting && !window.isDestroyed() && !window.isMinimized()) window.minimize();
+    });
   });
   window.once('closed', () => {
     if (primaryWindow === window) primaryWindow = undefined;
